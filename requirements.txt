@@ -1,0 +1,7 @@
+numpy
+pandas
+opencv-python
+scikit-learn
+timm
+matplotlib
+tqdm
