@@ -1,9 +1,7 @@
 import torch
 from tqdm import tqdm
-from torch.cuda.amp import autocast
-from torch.cuda.amp import GradScaler
-
-scaler = GradScaler("cuda")
+from torch.amp import autocast
+from torch.amp import GradScaler
 
 class Trainer:
     def __init__(self, model, criterion, optimizer, device):
@@ -11,6 +9,7 @@ class Trainer:
         self.criterion = criterion
         self.optimizer = optimizer
         self.device = device
+        self.scaler = GradScaler()
 
     def move_to_device(self, batch):
         # 将 batch 中所有 Tensor 移动到 device。
@@ -28,16 +27,22 @@ class Trainer:
         for batch in pbar:
             batch = self.move_to_device(batch)
             self.optimizer.zero_grad(set_to_none=True)
-            with autocast("cuda"):
+            with autocast():
                 output = self.model(batch)
                 if isinstance(output, dict):
                     logits = output["logits"]
                 else:
                     logits = output
                 loss = self.criterion(logits, batch["label"])
-            scaler.scale(loss).backward()
-            scaler.step(self.optimizer)
-            scaler.update()
+            self.scaler.scale(loss).backward()
+            # 1. 先 unscale 梯度（将缩放因子还原）
+            self.scaler.unscale_(self.optimizer)
+            # 2. 裁剪原始梯度（防止梯度爆炸）
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+            # 3. 更新参数
+            self.scaler.step(self.optimizer)
+            # 4. 更新缩放器
+            self.scaler.update()
             pred = logits.argmax(dim=1)
             correct = (pred == batch["label"]).sum().item()
             total_correct += correct

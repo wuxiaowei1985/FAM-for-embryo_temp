@@ -2,17 +2,15 @@ import random
 import torchvision.transforms.functional as TF
 import torch
 
-flip = random.random() < 0.5
-angle = random.uniform(-10,10)
-
 class FocusTransform:
     def __init__(self, image_size=224):
         self.image_size = image_size
     def __call__(self, images):
         output = []
         for img in images:
-            if flip:
+            if random.random() < 0.5:
                 img = TF.hflip(img)
+            angle = random.uniform(-10, 10)
             img = TF.rotate(img, angle)
             img = TF.resize(img,[self.image_size, self.image_size])
             img = TF.to_tensor(img)

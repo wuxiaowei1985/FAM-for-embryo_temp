@@ -14,9 +14,23 @@ seed_everything(cfg.SEED)
 def main():
     model = cfg.CURRENT_MODEL
     history = History()
+    # ============ 新增：计算类别权重 ============
+    all_labels = [sample["label"] for sample in train_dataset.samples]
+    labels_tensor = torch.tensor(all_labels)
+    class_counts = torch.bincount(labels_tensor, minlength=cfg.NUM_CLASSES).float()
+    total_samples = len(train_dataset)
+    class_weights = total_samples / (cfg.NUM_CLASSES * class_counts)
+    class_weights[class_counts == 0] = 0.0
+    # 可选归一化（使权重均值约为1）
+    class_weights = class_weights / class_weights.sum() * cfg.NUM_CLASSES
+    class_weights_tensor = class_weights.to(cfg.DEVICE)
+    # ==========================================
+    # 创建带权重的损失函数
+    criterion = nn.CrossEntropyLoss(weight=class_weights_tensor, label_smoothing=0.1)
     optimizer = torch.optim.Adam(
         model.parameters(),
-        lr=cfg.LR
+        lr=cfg.LR,
+        weight_decay=1e-4
     )
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer=optimizer,
@@ -30,13 +44,13 @@ def main():
     )
     trainer = Trainer(
         model,
-        criterion=nn.CrossEntropyLoss(),
+        criterion=criterion,
         optimizer=optimizer,
         device=cfg.DEVICE
     )
     validator = Validator(
         model,
-        criterion=nn.CrossEntropyLoss(),
+        criterion=criterion,
         device=cfg.DEVICE
     )
     for epoch in range(cfg.EPOCHS):

@@ -3,7 +3,7 @@ import torch.nn as nn
 
 class FocusAttentionBlock(nn.Module):
     # 一个 Focus Transformer Encoder Block
-    def __init__(self, feature_dim=512, num_heads=8, dropout=0.1):
+    def __init__(self, feature_dim=512, num_heads=8, dropout=0.2):
         super().__init__()
         self.norm1 = nn.LayerNorm(feature_dim)
         self.gamma1 = nn.Parameter(1e-4 * torch.ones(feature_dim))
@@ -29,7 +29,7 @@ class FocusAttentionBlock(nn.Module):
         return x
 
 class FocusAttentionEncoder(nn.Module):
-    def __init__(self, depth=4, feature_dim=512, num_heads=8, dropout=0.1):
+    def __init__(self, depth=4, feature_dim=512, num_heads=8, dropout=0.2):
         super().__init__()
         self.layers = nn.ModuleList([FocusAttentionBlock(feature_dim=feature_dim, num_heads=num_heads, dropout=dropout) for _ in range(depth)])
 
@@ -39,7 +39,7 @@ class FocusAttentionEncoder(nn.Module):
         return x
 
 class FocusAttention(nn.Module):
-    def __init__(self, feature_dim=512, num_heads=8, depth=4, dropout=0.1):
+    def __init__(self, feature_dim=512, num_heads=8, depth=4, dropout=0.2):
         super().__init__()
         self.focus_embedding = nn.Parameter(torch.randn(7, feature_dim))
         self.encoder = FocusAttentionEncoder(depth=depth, feature_dim=feature_dim, num_heads=num_heads, dropout=dropout)

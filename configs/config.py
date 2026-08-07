@@ -6,11 +6,11 @@ from model.baseline import BaselineModel
 
 # 训练
 SEED = 42
-BATCH_SIZE = 8
+BATCH_SIZE = 16
 EPOCHS = 50
 LR = 1e-4
 MIN_LR = 1e-6
-NUM_LAYERS = 4
+NUM_LAYERS = 2
 NUM_WORKERS = 0
 NUM_CLASSES = 16
 EARLY_STOPPING = True
