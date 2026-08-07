@@ -18,7 +18,7 @@ class EmbryoDataset(Dataset):
             embryo_dirs = [p for p in embryo_root.iterdir() if p.is_dir()]
         else:
             embryo_dirs = [embryo_root / e for e in embryo_list]
-        embryo_dirs = embryo_dirs[:10]   #取前十个胚胎
+        # embryo_dirs = embryo_dirs[:10]   #取前十个胚胎
         for embryo_dir in embryo_dirs:
             embryo_name = embryo_dir.name
             for img in sorted(embryo_dir.glob("*.jpeg")):

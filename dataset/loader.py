@@ -4,9 +4,19 @@ from dataset.utils.split import split_embryos
 from dataset.utils.transforms import FocusTransform
 from torch.utils.data import DataLoader
 from configs import config as cfg
+import random
+import numpy as np
+import torch
 
+def seed_worker(worker_id):
+    worker_seed = torch.initial_seed() % 2**32
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
 
-train_embryos, val_embryos, test_embryos = split_embryos(cfg.DATA_ROOT_A, seed=42)
+g = torch.Generator()
+g.manual_seed(cfg.SEED)
+
+train_embryos, val_embryos, test_embryos = split_embryos(cfg.DATA_ROOT_A, seed=cfg.SEED)
 
 train_dataset = EmbryoDataset(root=cfg.DATA_ROOT_A,
                               transform=FocusTransform(),
@@ -24,17 +34,23 @@ train_loader = DataLoader(train_dataset,
                           batch_size=cfg.BATCH_SIZE,
                           shuffle=True,
                           num_workers=cfg.NUM_WORKERS,
-                          collate_fn=embryo_collate_fn
+                          collate_fn=embryo_collate_fn,
+                          generator=g,
+                          worker_init_fn=seed_worker
                           )
 val_loader = DataLoader(val_dataset,
                         batch_size=cfg.BATCH_SIZE,
                         shuffle=False,
                         num_workers=cfg.NUM_WORKERS,
-                        collate_fn=embryo_collate_fn
+                        collate_fn=embryo_collate_fn,
+                        generator=g,
+                        worker_init_fn=seed_worker
                         )
 test_loader = DataLoader(test_dataset,
                          batch_size=cfg.BATCH_SIZE,
                          shuffle=False,
                          num_workers=cfg.NUM_WORKERS,
-                         collate_fn=embryo_collate_fn
+                         collate_fn=embryo_collate_fn,
+                         generator=g,
+                         worker_init_fn=seed_worker
                          )

@@ -5,12 +5,18 @@ from model.mean import MeanModel
 from model.baseline import BaselineModel
 
 # 训练
+SEED = 42
 BATCH_SIZE = 8
 EPOCHS = 50
 LR = 1e-4
+MIN_LR = 1e-6
 NUM_LAYERS = 4
 NUM_WORKERS = 0
 NUM_CLASSES = 16
+EARLY_STOPPING = True
+PATIENCE = 30
+MIN_DELTA = 0.0
+
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 CURRENT_MODEL = FocusAttentionModel(pretrained=True, num_classes=NUM_CLASSES)
 
@@ -30,6 +36,8 @@ TEST_MODEL_DIR = PROJECT_ROOT / "checkpoints" / CURRENT_MODEL_DIR / "best_0.pth"
 # 测试结果
 SAVE_RESULT_DIR = RUN_DIR / "per_class_accuracy.csv"
 SAVE_CM_DIR = RUN_DIR / "confusion_matrix.csv"
+# 模型性能
+HISTORY_CSV = RUN_DIR / "history.csv"
 
 if __name__ == "__main__":
     RUN_DIR.mkdir(parents=True, exist_ok=True)

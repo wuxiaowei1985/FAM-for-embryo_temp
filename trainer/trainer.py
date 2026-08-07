@@ -1,5 +1,9 @@
 import torch
 from tqdm import tqdm
+from torch.cuda.amp import autocast
+from torch.cuda.amp import GradScaler
+
+scaler = GradScaler("cuda")
 
 class Trainer:
     def __init__(self, model, criterion, optimizer, device):
@@ -23,15 +27,17 @@ class Trainer:
         pbar = tqdm(loader)
         for batch in pbar:
             batch = self.move_to_device(batch)
-            output = self.model(batch)
-            if isinstance(output, dict):
-                logits = output["logits"]
-            else:
-                logits = output
-            loss = self.criterion(logits, batch["label"])
-            self.optimizer.zero_grad()
-            loss.backward()
-            self.optimizer.step()
+            self.optimizer.zero_grad(set_to_none=True)
+            with autocast("cuda"):
+                output = self.model(batch)
+                if isinstance(output, dict):
+                    logits = output["logits"]
+                else:
+                    logits = output
+                loss = self.criterion(logits, batch["label"])
+            scaler.scale(loss).backward()
+            scaler.step(self.optimizer)
+            scaler.update()
             pred = logits.argmax(dim=1)
             correct = (pred == batch["label"]).sum().item()
             total_correct += correct
