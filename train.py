@@ -1,4 +1,3 @@
-import torch
 import torch.nn as nn
 from trainer.trainer import Trainer
 from trainer.validate import Validator
@@ -27,19 +26,15 @@ def main():
     # ==========================================
     # 创建带权重的损失函数
     criterion = nn.CrossEntropyLoss(weight=class_weights_tensor, label_smoothing=0.05)
-    # ============ 分组学习率 ============
-    encoder_params = []
-    other_params = []
+    # ============ 冻结 Encoder（ResNet18） ============
+    # 先将模型中 encoder 部分的所有参数冻结
     for name, param in model.named_parameters():
-        if 'encoder' in name:  # 对应 SharedEncoder 里的 ResNet
-            encoder_params.append(param)
-        else:
-            other_params.append(param)  # 包含 focus_embedding, attention, head 等
+        if 'encoder' in name:  # 对应 SharedEncoder 里的 ResNet18
+            param.requires_grad = False
+    # 只优化未冻结的参数（即 FocusAttention + ClassificationHead）
     optimizer = torch.optim.Adam(
-        [
-            {'params': encoder_params, 'lr': cfg.LR},  # 1e-4
-            {'params': other_params, 'lr': cfg.LR * 5} # 5e-4，让注意力快速苏醒
-        ],
+        filter(lambda p: p.requires_grad, model.parameters()),  # 只传需要梯度的参数
+        lr=cfg.LR,  # 1e-4
         weight_decay=1e-4
     )
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(

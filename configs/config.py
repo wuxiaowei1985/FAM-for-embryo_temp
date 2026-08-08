@@ -10,7 +10,7 @@ BATCH_SIZE = 16
 EPOCHS = 50
 LR = 1e-4
 MIN_LR = 1e-6
-NUM_LAYERS = 2
+NUM_LAYERS = 1
 NUM_WORKERS = 0
 NUM_CLASSES = 16
 EARLY_STOPPING = True
@@ -18,7 +18,7 @@ PATIENCE = 30
 MIN_DELTA = 0.0
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-CURRENT_MODEL = FocusAttentionModel(pretrained=True, num_classes=NUM_CLASSES)
+CURRENT_MODEL = FocusAttentionModel(pretrained=True, num_classes=NUM_CLASSES, dropout=0.4)
 
 # 获取 configs.py 所在目录的父目录（即与 configs 同级的目录）
 CONFIG_DIR = Path(__file__).resolve().parent  # configs 文件夹
