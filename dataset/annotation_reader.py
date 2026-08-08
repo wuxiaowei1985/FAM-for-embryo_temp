@@ -2,7 +2,7 @@ from pathlib import Path
 import pandas as pd
 
 class AnnotationLoader:
-    STAGE_ORDER = ["tPB2", "tPNa", "tPNf", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "tM", "tSB", "tB", "tEB", "tHB"]
+    STAGE_ORDER = ["tPB2", "tPNa", "tPNf", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9+", "tM", "tSB", "tB", "tEB", "tHB"]
     STAGE_TO_LABEL = {stage: idx for idx, stage in enumerate(STAGE_ORDER)}
     def __init__(self, annotation_root):
         self.annotation_root = Path(annotation_root)

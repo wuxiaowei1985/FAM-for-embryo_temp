@@ -32,7 +32,7 @@ RUN_DIR = PROJECT_ROOT / "run"
 # 保存
 CURRENT_MODEL_DIR = "focus_attention_model"
 SAVE_MODEL_DIR = PROJECT_ROOT / "checkpoints" / CURRENT_MODEL_DIR
-TEST_MODEL_DIR = PROJECT_ROOT / "checkpoints" / CURRENT_MODEL_DIR / "best_0.pth"
+TEST_MODEL_DIR = PROJECT_ROOT / "checkpoints" / CURRENT_MODEL_DIR / "best_model.pth"
 # 测试结果
 SAVE_RESULT_DIR = RUN_DIR / "per_class_accuracy.csv"
 SAVE_CM_DIR = RUN_DIR / "confusion_matrix.csv"

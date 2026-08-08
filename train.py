@@ -60,18 +60,19 @@ def main():
         val_loss, val_acc = validator.validate(val_loader)
         if cfg.EARLY_STOPPING:
             stop = early_stopping(val_acc=val_acc, model=model, optimizer=optimizer, scheduler=scheduler, epoch=epoch)
+            print(f"Train Loss : {train_loss:.4f}")
+            print(f"Train Acc  : {train_acc:.4f}")
+            print(f"Val Loss   : {val_loss:.4f}")
+            print(f"Val Acc    : {val_acc:.4f}")
+            print(f"LR         : {scheduler.get_last_lr()[0]:.8f}")
+            history.update(epoch=epoch + 1, train_loss=train_loss, val_loss=val_loss, train_acc=train_acc, val_acc=val_acc, lr=scheduler.get_last_lr()[0])
+            scheduler.step()
             if stop:
                 print("=" * 60)
                 print("Early stopping triggered.")
                 print("=" * 60)
                 break
-        print(f"Train Loss : {train_loss:.4f}")
-        print(f"Train Acc  : {train_acc:.4f}")
-        print(f"Val Loss   : {val_loss:.4f}")
-        print(f"Val Acc    : {val_acc:.4f}")
-        print(f"LR         : {scheduler.get_last_lr()[0]:.8f}")
-        history.update(epoch=epoch + 1, train_loss=train_loss, val_loss=val_loss, train_acc=train_acc, val_acc=val_acc, lr=scheduler.get_last_lr()[0])
-        scheduler.step()
+
     checkpoint = {
         "epoch": epoch+1,
         "model": model.state_dict(),

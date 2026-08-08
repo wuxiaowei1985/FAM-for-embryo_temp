@@ -9,7 +9,8 @@ CLASS_NAMES = ["tPB2", "tPNa", "tPNf", "t2", "t3", "t4", "t5", "t6", "t7", "t8",
 CLASSES_NUM = len(CLASS_NAMES)
 def main():
     model = FocusAttentionModel()
-    model.load_state_dict(torch.load(cfg.TEST_MODEL_DIR, map_location=cfg.DEVICE))
+    checkpoint = torch.load(cfg.TEST_MODEL_DIR, map_location=cfg.DEVICE)
+    model.load_state_dict(checkpoint['model'])
     model.to(cfg.DEVICE)
     model.eval()
     correct_per_class = torch.zeros(CLASSES_NUM, dtype=torch.int64)
