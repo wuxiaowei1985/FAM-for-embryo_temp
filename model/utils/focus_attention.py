@@ -6,10 +6,10 @@ class FocusAttentionBlock(nn.Module):
     def __init__(self, feature_dim=512, num_heads=8, dropout=0.2):
         super().__init__()
         self.norm1 = nn.LayerNorm(feature_dim)
-        self.gamma1 = nn.Parameter(1e-4 * torch.ones(feature_dim))
+        self.gamma1 = nn.Parameter(torch.ones(feature_dim))
         self.attn = nn.MultiheadAttention(embed_dim=feature_dim, num_heads=num_heads, dropout=dropout, batch_first=True)
         self.norm2 = nn.LayerNorm(feature_dim)
-        self.gamma2 = nn.Parameter(1e-4 * torch.ones(feature_dim))
+        self.gamma2 = nn.Parameter(torch.ones(feature_dim))
         self.ffn = nn.Sequential(
             nn.Linear(feature_dim, feature_dim * 4),
             nn.GELU(),

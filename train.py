@@ -20,16 +20,26 @@ def main():
     class_counts = torch.bincount(labels_tensor, minlength=cfg.NUM_CLASSES).float()
     total_samples = len(train_dataset)
     class_weights = total_samples / (cfg.NUM_CLASSES * class_counts)
+    max_weight = 10.0
+    class_weights = torch.clamp(class_weights, max=max_weight)
     class_weights[class_counts == 0] = 0.0
-    # 可选归一化（使权重均值约为1）
-    class_weights = class_weights / class_weights.sum() * cfg.NUM_CLASSES
     class_weights_tensor = class_weights.to(cfg.DEVICE)
     # ==========================================
     # 创建带权重的损失函数
-    criterion = nn.CrossEntropyLoss(weight=class_weights_tensor, label_smoothing=0.1)
+    criterion = nn.CrossEntropyLoss(weight=class_weights_tensor, label_smoothing=0.05)
+    # ============ 分组学习率 ============
+    encoder_params = []
+    other_params = []
+    for name, param in model.named_parameters():
+        if 'encoder' in name:  # 对应 SharedEncoder 里的 ResNet
+            encoder_params.append(param)
+        else:
+            other_params.append(param)  # 包含 focus_embedding, attention, head 等
     optimizer = torch.optim.Adam(
-        model.parameters(),
-        lr=cfg.LR,
+        [
+            {'params': encoder_params, 'lr': cfg.LR},  # 1e-4
+            {'params': other_params, 'lr': cfg.LR * 5} # 5e-4，让注意力快速苏醒
+        ],
         weight_decay=1e-4
     )
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(

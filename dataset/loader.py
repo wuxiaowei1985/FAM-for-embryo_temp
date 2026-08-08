@@ -1,7 +1,7 @@
 from dataset.embryo_dataset import EmbryoDataset
 from dataset.utils.collate_fn import embryo_collate_fn
 from dataset.utils.split import split_embryos
-from dataset.utils.transforms import FocusTransform
+from dataset.utils.transforms import FocusTransform, FocusValTransform
 from torch.utils.data import DataLoader
 from configs import config as cfg
 import random
@@ -23,11 +23,11 @@ train_dataset = EmbryoDataset(root=cfg.DATA_ROOT_A,
                               embryo_list=train_embryos
                               )
 val_dataset = EmbryoDataset(root=cfg.DATA_ROOT_A,
-                            transform=FocusTransform(),
+                            transform=FocusValTransform(),
                             embryo_list=val_embryos
                             )
 test_dataset = EmbryoDataset(root=cfg.DATA_ROOT_A,
-                             transform=FocusTransform(),
+                             transform=FocusValTransform(),
                              embryo_list=test_embryos
                              )
 train_loader = DataLoader(train_dataset,
