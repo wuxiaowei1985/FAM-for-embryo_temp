@@ -26,21 +26,34 @@ def main():
     # ==========================================
     # 创建带权重的损失函数
     criterion = nn.CrossEntropyLoss(weight=class_weights_tensor, label_smoothing=0.05)
-    # ============ 冻结 Encoder（ResNet18） ============
-    # 先将模型中 encoder 部分的所有参数冻结
+    # ============ 精细冻结/解冻策略 ============
     for name, param in model.named_parameters():
-        if 'encoder' in name:  # 对应 SharedEncoder 里的 ResNet18
-            param.requires_grad = False
-    # 只优化未冻结的参数（即 FocusAttention + ClassificationHead）
-    optimizer = torch.optim.Adam(
-        filter(lambda p: p.requires_grad, model.parameters()),  # 只传需要梯度的参数
-        lr=cfg.LR,  # 1e-4
-        weight_decay=1e-4
-    )
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer=optimizer,
-        T_max=cfg.EPOCHS,
-        eta_min=cfg.MIN_LR
+        param.requires_grad = False  # 默认全部冻结
+    # 只解冻 ResNet18 的 layer4 和最后的 BN 层
+    for name, param in model.named_parameters():
+        if 'encoder' in name:
+            if 'layer4' in name or 'bn2' in name or 'bn3' in name:
+                param.requires_grad = True
+            else:
+                param.requires_grad = False
+    # FocusAttention 和 Head 全部可训练（它们在之前是 True，现在保持）
+    for name, param in model.named_parameters():
+        if 'fusion' in name or 'head' in name or 'focus_embedding' in name:
+            param.requires_grad = True
+    optimizer = torch.optim.Adam([
+        {'params': [p for n, p in model.named_parameters() if 'encoder' in n and p.requires_grad], 'lr': cfg.BACKBONE_LR,
+         'weight_decay': 1e-4},
+        {'params': [p for n, p in model.named_parameters() if 'encoder' not in n and p.requires_grad], 'lr': cfg.LR,
+         'weight_decay': 1e-4}
+    ])
+    # 改用 ReduceLROnPlateau：监控验证损失，若连续 5 个 epoch 不降，LR 乘 0.5
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer,
+        mode='min',  # 监控验证损失是否下降
+        factor=0.5,  # 每次降低一半
+        patience=5,  # 5 个 epoch 不降就触发
+        min_lr=cfg.MIN_LR,  # 最低 1e-6
+        verbose=True
     )
     early_stopping = EarlyStopping(
         patience=cfg.PATIENCE,
@@ -71,7 +84,7 @@ def main():
             print(f"Val Acc    : {val_acc:.4f}")
             print(f"LR         : {scheduler.get_last_lr()[0]:.8f}")
             history.update(epoch=epoch + 1, train_loss=train_loss, val_loss=val_loss, train_acc=train_acc, val_acc=val_acc, lr=scheduler.get_last_lr()[0])
-            scheduler.step()
+            scheduler.step(val_loss)
             if stop:
                 print("=" * 60)
                 print("Early stopping triggered.")

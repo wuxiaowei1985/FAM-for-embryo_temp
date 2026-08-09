@@ -8,6 +8,18 @@ class FocusTransform:
     def __call__(self, images):
         output = []
         for img in images:
+            # 新增：随机调整亮度和对比度（概率 0.5）
+            if random.random() < 0.5:
+                img = TF.adjust_brightness(img, random.uniform(0.7, 1.3))
+                img = TF.adjust_contrast(img, random.uniform(0.7, 1.3))
+            # 新增：随机平移 (shift ~ 10%)
+            if random.random() < 0.5:
+                h, w = img.size
+                max_dx = int(w * 0.08)
+                max_dy = int(h * 0.08)
+                dx = random.randint(-max_dx, max_dx)
+                dy = random.randint(-max_dy, max_dy)
+                img = TF.affine(img, angle=0, translate=(dx, dy), scale=1.0, shear=0)
             if random.random() < 0.5:
                 img = TF.hflip(img)
             angle = random.uniform(-5, 5)

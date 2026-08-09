@@ -7,6 +7,7 @@ from configs import config as cfg
 import random
 import numpy as np
 import torch
+from torch.utils.data import WeightedRandomSampler
 
 def seed_worker(worker_id):
     worker_seed = torch.initial_seed() % 2**32
@@ -30,14 +31,35 @@ test_dataset = EmbryoDataset(root=cfg.DATA_ROOT_A,
                              transform=FocusValTransform(),
                              embryo_list=test_embryos
                              )
+
+labels = [sample["label"] for sample in train_dataset.samples]
+class_counts = torch.bincount(torch.tensor(labels), minlength=cfg.NUM_CLASSES).float()
+# 处理 tHB 为 0 的情况（防止除以零）
+class_counts[class_counts == 0] = 1.0
+# 计算每个样本的权重：样本越稀有，权重越大
+sample_weights = [1.0 / class_counts[label] for label in labels]
+# 归一化权重（使总和等于样本数，稳定性好）
+sample_weights = torch.tensor(sample_weights, dtype=torch.float)
+sample_weights = sample_weights / sample_weights.sum() * len(sample_weights)
+sampler = WeightedRandomSampler(sample_weights, num_samples=len(sample_weights), replacement=True)
+
 train_loader = DataLoader(train_dataset,
                           batch_size=cfg.BATCH_SIZE,
-                          shuffle=True,
+                          sampler=sampler,        # 使用 sampler，shuffle 必须设为 False
+                          shuffle=False,
                           num_workers=cfg.NUM_WORKERS,
                           collate_fn=embryo_collate_fn,
                           generator=g,
                           worker_init_fn=seed_worker
                           )
+# train_loader = DataLoader(train_dataset,
+#                           batch_size=cfg.BATCH_SIZE,
+#                           shuffle=True,
+#                           num_workers=cfg.NUM_WORKERS,
+#                           collate_fn=embryo_collate_fn,
+#                           generator=g,
+#                           worker_init_fn=seed_worker
+#                           )
 val_loader = DataLoader(val_dataset,
                         batch_size=cfg.BATCH_SIZE,
                         shuffle=False,

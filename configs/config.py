@@ -8,7 +8,8 @@ from model.baseline import BaselineModel
 SEED = 42
 BATCH_SIZE = 16
 EPOCHS = 50
-LR = 1e-4
+LR = 1e-4           # 注意力/分类头用正常学习率
+BACKBONE_LR = 1e-5  # 骨干解冻部分用极低学习率
 MIN_LR = 1e-6
 NUM_LAYERS = 1
 NUM_WORKERS = 0
