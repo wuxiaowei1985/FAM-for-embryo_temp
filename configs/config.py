@@ -37,6 +37,7 @@ TEST_MODEL_DIR = PROJECT_ROOT / "checkpoints" / CURRENT_MODEL_DIR / "best_model.
 # 测试结果
 SAVE_RESULT_DIR = RUN_DIR / "per_class_accuracy.csv"
 SAVE_CM_DIR = RUN_DIR / "confusion_matrix.csv"
+SAVE_REPORT_DIR = RUN_DIR / "classification_report.csv"
 # 模型性能
 HISTORY_CSV = RUN_DIR / "history.csv"
 

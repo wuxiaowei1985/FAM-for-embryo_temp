@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 from trainer.trainer import Trainer
 from trainer.validate import Validator
@@ -12,6 +13,15 @@ seed_everything(cfg.SEED)
 
 def main():
     model = cfg.CURRENT_MODEL
+    # ---- 新增加载逻辑 ----
+    if cfg.TEST_MODEL_DIR.exists():
+        print(f"Loading pretrained model from {cfg.TEST_MODEL_DIR}")
+        checkpoint = torch.load(cfg.TEST_MODEL_DIR, map_location=cfg.DEVICE)
+        model.load_state_dict(checkpoint['model'])
+        print("Loaded successfully.")
+    else:
+        print("No pretrained model found, starting from scratch.")
+    # ---------------------
     history = History()
     # ============ 新增：计算类别权重 ============
     all_labels = [sample["label"] for sample in train_dataset.samples]
@@ -29,17 +39,18 @@ def main():
     # ============ 精细冻结/解冻策略 ============
     for name, param in model.named_parameters():
         param.requires_grad = False  # 默认全部冻结
-    # 只解冻 ResNet18 的 layer4 和最后的 BN 层
-    for name, param in model.named_parameters():
-        if 'encoder' in name:
-            if 'layer4' in name or 'bn2' in name or 'bn3' in name:
-                param.requires_grad = True
-            else:
-                param.requires_grad = False
-    # FocusAttention 和 Head 全部可训练（它们在之前是 True，现在保持）
+        # 解冻 FocusAttention 和 ClassificationHead（必须可训练）
     for name, param in model.named_parameters():
         if 'fusion' in name or 'head' in name or 'focus_embedding' in name:
             param.requires_grad = True
+    # 【新增】解冻 ResNet18 的 layer3 和 layer4（让视觉特征适配胚胎）
+    for name, param in model.named_parameters():
+        if 'encoder' in name:
+            if 'layer3' in name or 'layer4' in name:
+                param.requires_grad = True
+            # 可选：同时解冻最后的 BN 层（通常建议）
+            if 'bn' in name and ('layer3' in name or 'layer4' in name):
+                param.requires_grad = True
     optimizer = torch.optim.Adam([
         {'params': [p for n, p in model.named_parameters() if 'encoder' in n and p.requires_grad], 'lr': cfg.BACKBONE_LR,
          'weight_decay': 1e-4},

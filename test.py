@@ -66,7 +66,59 @@ def main():
     print("=" * 70)
 
     print("\nClassification Report\n")
-    print(classification_report( all_labels, all_preds, labels=list(range(CLASSES_NUM)), target_names=CLASS_NAMES, digits=4, zero_division=0))
+    # 生成分类报告（同时获取文本和字典形式）
+    report_text = classification_report(
+        all_labels, all_preds,
+        labels=list(range(CLASSES_NUM)),
+        target_names=CLASS_NAMES,
+        digits=4,
+        zero_division=0
+    )
+    report_dict = classification_report(
+        all_labels, all_preds,
+        labels=list(range(CLASSES_NUM)),
+        target_names=CLASS_NAMES,
+        digits=4,
+        zero_division=0,
+        output_dict=True
+    )
+    # 打印报告（原有功能）
+    print(report_text)
+    # 保存为CSV（DataFrame）
+    # 从字典中提取每类的指标，并转为DataFrame
+    rows = []
+    for class_name in CLASS_NAMES:
+        if class_name in report_dict:
+            metrics = report_dict[class_name]
+            rows.append({
+                'class': class_name,
+                'precision': metrics['precision'],
+                'recall': metrics['recall'],
+                'f1-score': metrics['f1-score'],
+                'support': metrics['support']
+            })
+    # 加入平均值（macro avg / weighted avg）
+    for avg_type in ['macro avg', 'weighted avg']:
+        if avg_type in report_dict:
+            metrics = report_dict[avg_type]
+            rows.append({
+                'class': avg_type,
+                'precision': metrics['precision'],
+                'recall': metrics['recall'],
+                'f1-score': metrics['f1-score'],
+                'support': metrics['support']
+            })
+    # 添加整体准确率（使用 overall_acc 变量，注意是百分比）
+    # 添加整体准确率（使用 overall_acc 变量，注意是百分比）
+    rows.append({
+        'class': 'accuracy',
+        'precision': None,
+        'recall': None,
+        'f1-score': None,
+        'support': round(overall_acc, 2)  # 保留两位小数，单位 %
+    })
+    df_report = pd.DataFrame(rows)
+    df_report.to_csv(cfg.SAVE_REPORT_DIR, index=False, encoding='utf-8-sig')
 
     cm = confusion_matrix(all_labels, all_preds, labels=list(range(CLASSES_NUM)))
     print("\nConfusion Matrix\n")

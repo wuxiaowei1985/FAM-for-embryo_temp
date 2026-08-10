@@ -15,8 +15,8 @@ class FocusTransform:
             # 新增：随机平移 (shift ~ 10%)
             if random.random() < 0.5:
                 h, w = img.size
-                max_dx = int(w * 0.08)
-                max_dy = int(h * 0.08)
+                max_dx = int(w * 0.05)
+                max_dy = int(h * 0.05)
                 dx = random.randint(-max_dx, max_dx)
                 dy = random.randint(-max_dy, max_dy)
                 img = TF.affine(img, angle=0, translate=(dx, dy), scale=1.0, shear=0)
