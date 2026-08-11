@@ -397,7 +397,7 @@ class MSFDAttention(nn.Module):
         return fused, weight
 
 if __name__ == "__main__":
-    model = MSFDAttention(feature_dim=512, num_heads=8, depth=2, num_levels=3, num_points=4, dropout=0.2)
+    model = MSFDAttention(feature_dim=512, num_heads=8, depth=6, num_levels=3, num_points=4, dropout=0.2)
     x = torch.randn(8, 7, 512)
     feature, weight = model(x)
     print("Input:", x.shape)

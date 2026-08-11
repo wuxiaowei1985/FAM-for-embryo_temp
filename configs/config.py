@@ -1,6 +1,7 @@
 from pathlib import Path
 import torch
 from model.attention_model import FocusAttentionModel
+from model.msfd_attention import MSFDAttentionModel
 from model.mean import MeanModel
 from model.baseline import BaselineModel
 
