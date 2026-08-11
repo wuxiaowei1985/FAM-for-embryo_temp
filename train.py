@@ -54,7 +54,7 @@ def main():
     optimizer = torch.optim.Adam([
         {'params': [p for n, p in model.named_parameters() if 'encoder' in n and p.requires_grad], 'lr': cfg.BACKBONE_LR,
          'weight_decay': 1e-4},
-        {'params': [p for n, p in model.named_parameters() if 'encoder' not in n and p.requires_grad], 'lr': cfg.LR,
+        {'params': [p for n, p in model.named_parameters() if 'encoder' not in n and p.requires_grad], 'lr': cfg.LR * 5,
          'weight_decay': 1e-4}
     ])
     # 改用 ReduceLROnPlateau：监控验证损失，若连续 5 个 epoch 不降，LR 乘 0.5
@@ -93,8 +93,10 @@ def main():
             print(f"Train Acc  : {train_acc:.4f}")
             print(f"Val Loss   : {val_loss:.4f}")
             print(f"Val Acc    : {val_acc:.4f}")
-            print(f"LR         : {scheduler.get_last_lr()[0]:.8f}")
-            history.update(epoch=epoch + 1, train_loss=train_loss, val_loss=val_loss, train_acc=train_acc, val_acc=val_acc, lr=scheduler.get_last_lr()[0])
+            lr_list = scheduler.get_last_lr()
+            print(f"LR Backbone: {lr_list[0]:.8f}")
+            print(f"LR FH: {lr_list[1]:.8f}")
+            history.update(epoch=epoch + 1, train_loss=train_loss, val_loss=val_loss, train_acc=train_acc, val_acc=val_acc, lr_backbone=lr_list[0], lr_fh=lr_list[1])
             scheduler.step(val_loss)
             if stop:
                 print("=" * 60)
