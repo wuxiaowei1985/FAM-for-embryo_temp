@@ -95,7 +95,7 @@ def main():
             print(f"Val Acc    : {val_acc:.4f}")
             lr_list = scheduler.get_last_lr()
             print(f"LR Backbone: {lr_list[0]:.8f}")
-            print(f"LR FH: {lr_list[1]:.8f}")
+            print(f"LR FH:       {lr_list[1]:.8f}")
             history.update(epoch=epoch + 1, train_loss=train_loss, val_loss=val_loss, train_acc=train_acc, val_acc=val_acc, lr_backbone=lr_list[0], lr_fh=lr_list[1])
             scheduler.step(val_loss)
             if stop:
