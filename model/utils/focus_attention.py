@@ -56,7 +56,7 @@ class FocusAttention(nn.Module):
         return fused, weight
 
 if __name__ == "__main__":
-    model = FocusAttention(depth=6)
+    model = FocusAttention(depth=2)
     x = torch.randn(8, 7, 512)
     feature, weight = model(x)
     print(feature.shape)

@@ -1,5 +1,6 @@
 from pathlib import Path
 import torch
+from dataset import loader
 from model.attention_model import FocusAttentionModel
 from model.msfd_attention import MSFDAttentionModel
 from model.mean import MeanModel
@@ -7,20 +8,22 @@ from model.baseline import BaselineModel
 
 # 训练
 SEED = 42
-BATCH_SIZE = 16
+BATCH_SIZE = 32
 EPOCHS = 50
 LR = 1e-4           # 注意力/分类头用正常学习率
 BACKBONE_LR = 1e-5  # 骨干解冻部分用极低学习率
-MIN_LR = 1e-6
-NUM_LAYERS = 1
-NUM_WORKERS = 0
+MIN_LR = 1e-7
+NUM_LAYERS = 2
+NUM_WORKERS = 4
 NUM_CLASSES = 16
 EARLY_STOPPING = True
-PATIENCE = 30
+PATIENCE = 20
 MIN_DELTA = 0.0
+FROZEN = False
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 CURRENT_MODEL = FocusAttentionModel(pretrained=True, num_classes=NUM_CLASSES, dropout=0.4)
+LOADER = loader.train_loader
 
 # 获取 configs.py 所在目录的父目录（即与 configs 同级的目录）
 CONFIG_DIR = Path(__file__).resolve().parent  # configs 文件夹
@@ -28,7 +31,8 @@ CONFIG_DIR = Path(__file__).resolve().parent  # configs 文件夹
 PROJECT_ROOT = CONFIG_DIR.parent  # configs 的上一级
 # 数据集目录
 DATA_ROOT_R = PROJECT_ROOT / "data"  # 相对路径
-DATA_ROOT_A = Path(r"I:\datasets\胚胎\南特704")  # 绝对路径
+DATA_ROOT_A = Path(r"your dataset path")  # 绝对路径
+DATA_ROOT = DATA_ROOT_R
 # 输出目录
 RUN_DIR = PROJECT_ROOT / "run"
 # 保存
