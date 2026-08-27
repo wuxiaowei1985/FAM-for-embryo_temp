@@ -1,6 +1,5 @@
 from pathlib import Path
 import torch
-from dataset import loader
 from model.attention_model import FocusAttentionModel
 from model.msfd_attention import MSFDAttentionModel
 from model.mean import MeanModel
@@ -23,7 +22,6 @@ FROZEN = False
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 CURRENT_MODEL = FocusAttentionModel(pretrained=True, num_classes=NUM_CLASSES, dropout=0.4)
-LOADER = loader.train_loader
 
 # 获取 configs.py 所在目录的父目录（即与 configs 同级的目录）
 CONFIG_DIR = Path(__file__).resolve().parent  # configs 文件夹

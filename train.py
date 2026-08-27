@@ -29,6 +29,7 @@ def main():
         lr=cfg.LR,
         weight_decay=1e-4
     )
+    loader = train_loader
     if cfg.FROZEN:
         # ============ 精细冻结/解冻策略 ============
         for name, param in model.named_parameters():
@@ -81,7 +82,7 @@ def main():
     for epoch in range(cfg.EPOCHS):
         print("=" * 60)
         print(f"Epoch {epoch+1}")
-        train_loss, train_acc = trainer.train_one_epoch(cfg.LOADER)
+        train_loss, train_acc = trainer.train_one_epoch(loader)
         val_loss, val_acc = validator.validate(val_loader)
         if cfg.EARLY_STOPPING:
             stop = early_stopping(val_acc=val_acc, model=model, optimizer=optimizer, scheduler=scheduler, epoch=epoch)
