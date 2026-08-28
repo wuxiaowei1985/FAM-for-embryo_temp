@@ -19,6 +19,9 @@ EARLY_STOPPING = True
 PATIENCE = 20
 MIN_DELTA = 0.0
 FROZEN = False
+LOAD_MODEL = False
+ENABLE_CLASS_FILTER = True
+ACCURACY = 70.0
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 CURRENT_MODEL = FocusAttentionModel(pretrained=True, num_classes=NUM_CLASSES, dropout=0.4)

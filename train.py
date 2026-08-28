@@ -14,7 +14,7 @@ seed_everything(cfg.SEED)
 def main():
     model = cfg.CURRENT_MODEL
     # ---- 新增加载逻辑 ----
-    if cfg.TEST_MODEL_DIR.exists():
+    if cfg.LOAD_MODEL:
         print(f"Loading pretrained model from {cfg.TEST_MODEL_DIR}")
         checkpoint = torch.load(cfg.TEST_MODEL_DIR, map_location=cfg.DEVICE)
         model.load_state_dict(checkpoint['model'])
