@@ -1,9 +1,5 @@
 from pathlib import Path
 import torch
-from model.attention_model import FocusAttentionModel
-from model.msfd_attention import MSFDAttentionModel
-from model.mean import MeanModel
-from model.baseline import BaselineModel
 
 # 训练
 SEED = 42
@@ -13,6 +9,7 @@ LR = 1e-4           # 注意力/分类头用正常学习率
 BACKBONE_LR = 1e-5  # 骨干解冻部分用极低学习率
 MIN_LR = 1e-7
 NUM_LAYERS = 2
+DROPOUT = 0.4
 NUM_WORKERS = 4
 NUM_CLASSES = 16
 EARLY_STOPPING = True
@@ -24,7 +21,7 @@ ENABLE_CLASS_FILTER = True
 ACCURACY = 70.0
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-CURRENT_MODEL = FocusAttentionModel(pretrained=True, num_classes=NUM_CLASSES, dropout=0.4)
+CURRENT_MODEL = "focus_attention"
 
 # 获取 configs.py 所在目录的父目录（即与 configs 同级的目录）
 CONFIG_DIR = Path(__file__).resolve().parent  # configs 文件夹
@@ -37,9 +34,8 @@ DATA_ROOT = DATA_ROOT_R
 # 输出目录
 RUN_DIR = PROJECT_ROOT / "run"
 # 保存
-CURRENT_MODEL_DIR = "focus_attention_model"
-SAVE_MODEL_DIR = PROJECT_ROOT / "checkpoints" / CURRENT_MODEL_DIR
-TEST_MODEL_DIR = PROJECT_ROOT / "checkpoints" / CURRENT_MODEL_DIR / "best_model.pth"
+SAVE_MODEL_DIR = PROJECT_ROOT / "checkpoints" / CURRENT_MODEL
+TEST_MODEL_DIR = PROJECT_ROOT / "checkpoints" / CURRENT_MODEL / "best_model.pth"
 # 测试结果
 SAVE_RESULT_DIR = RUN_DIR / "per_class_accuracy.csv"
 SAVE_CM_DIR = RUN_DIR / "confusion_matrix.csv"

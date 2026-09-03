@@ -1,18 +1,19 @@
 import torch
 import torch.nn as nn
+from utils.seed import seed_everything
+from configs import config as cfg
+seed_everything(cfg.SEED)
+
 from trainer.trainer import Trainer
 from trainer.validate import Validator
 from dataset.loader import *
-from configs import config as cfg
-from utils.seed import seed_everything
 from utils.early_stopping import EarlyStopping
 from utils.history import History
 from utils.plot import plot_training_curve
-
-seed_everything(cfg.SEED)
+from utils.get_model import build_model
 
 def main():
-    model = cfg.CURRENT_MODEL
+    model = build_model(cfg.CURRENT_MODEL)
     # ---- 新增加载逻辑 ----
     if cfg.LOAD_MODEL:
         print(f"Loading pretrained model from {cfg.TEST_MODEL_DIR}")

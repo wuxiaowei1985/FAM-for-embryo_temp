@@ -3,12 +3,12 @@ import pandas as pd
 from sklearn.metrics import classification_report, confusion_matrix
 from configs import config as cfg
 from dataset.loader import test_loader
-from model.attention_model import FocusAttentionModel
+from utils.get_model import build_model
 
 CLASS_NAMES = ["tPB2", "tPNa", "tPNf", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9+", "tM", "tSB", "tB", "tEB", "tHB"]
 CLASSES_NUM = len(CLASS_NAMES)
 def main():
-    model = FocusAttentionModel()
+    model = build_model(cfg.CURRENT_MODEL)
     checkpoint = torch.load(cfg.TEST_MODEL_DIR, map_location=cfg.DEVICE)
     model.load_state_dict(checkpoint['model'])
     model.to(cfg.DEVICE)

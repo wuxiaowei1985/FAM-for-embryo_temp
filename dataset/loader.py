@@ -46,12 +46,12 @@ if cfg.ENABLE_CLASS_FILTER:
         original_len = len(train_dataset.samples)
         # 过滤样本
         train_dataset.samples = [s for s in train_dataset.samples if s['label'] in allowed_labels]
-        print(f"Filtered train dataset: {original_len} -> {len(train_dataset.samples)} samples, "
+        print(f"Filtered dataset: {original_len} -> {len(train_dataset.samples)} samples, "
               f"keeping classes: {low_acc_stages} (labels {allowed_labels})")
     else:
-        print(f"Warning: No classes with accuracy < {cfg.ACCURACY}% found. Training on all classes.")
+        print(f"Warning: No classes with accuracy < {cfg.ACCURACY}% found.")
 else:
-    print("Class filter disabled. Training on all classes.")
+    print("Class filter disabled.")
 
 train_loader = DataLoader(train_dataset,
                           batch_size=cfg.BATCH_SIZE,
