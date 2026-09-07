@@ -31,7 +31,7 @@ class EarlyStopping:
                 torch.save(checkpoint, self.save_path)
                 print("best model saved")
             if self.verbose:
-                print(f"Validation accuracy improved to {val_acc:.4f}%")
+                print(f"Validation accuracy improved to {val_acc * 100:.2f}%")
         else:
             self.counter += 1
             if self.verbose:

@@ -1,9 +1,9 @@
 from pathlib import Path
 import pandas as pd
+from dataset.labels import LABEL_NAMES
 
 class AnnotationLoader:
-    STAGE_ORDER = ["tPB2", "tPNa", "tPNf", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9+", "tM", "tSB", "tB", "tEB", "tHB"]
-    STAGE_TO_LABEL = {stage: idx for idx, stage in enumerate(STAGE_ORDER)}
+    STAGE_TO_LABEL = {stage: idx for idx, stage in enumerate(LABEL_NAMES)}
     def __init__(self, annotation_root):
         self.annotation_root = Path(annotation_root)
         self.cache = {}

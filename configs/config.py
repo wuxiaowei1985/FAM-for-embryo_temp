@@ -12,16 +12,25 @@ NUM_LAYERS = 2
 DROPOUT = 0.4
 NUM_WORKERS = 4
 NUM_CLASSES = 16
+# 粗分类
+COARSE_CLASSES = 3
+# 细分类
+PRONUCLEAR_CLASSES = 3
+CLEAVAGE_CLASSES = 8
+BLASTOCYST_CLASSES = 5
+
 EARLY_STOPPING = True
 PATIENCE = 20
 MIN_DELTA = 0.0
+
+TRAIN_STAGE = "both"    #"coarse"、"fine"、"both"
 FROZEN = False
 LOAD_MODEL = False
 ENABLE_CLASS_FILTER = True
 ACCURACY = 70.0
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-CURRENT_MODEL = "focus_attention"
+CURRENT_MODEL = "hierarchical_focus_attention"
 
 # 获取 configs.py 所在目录的父目录（即与 configs 同级的目录）
 CONFIG_DIR = Path(__file__).resolve().parent  # configs 文件夹

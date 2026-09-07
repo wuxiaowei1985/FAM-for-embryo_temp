@@ -14,7 +14,7 @@ class FocusTransform:
                 img = TF.adjust_contrast(img, random.uniform(0.7, 1.3))
             # 新增：随机平移 (shift ~ 10%)
             if random.random() < 0.5:
-                h, w = img.size
+                w, h = img.size
                 max_dx = int(w * 0.05)
                 max_dy = int(h * 0.05)
                 dx = random.randint(-max_dx, max_dx)

@@ -46,14 +46,50 @@ class FocusAttention(nn.Module):
         self.final_norm = nn.LayerNorm(feature_dim)
         self.score = nn.Linear(feature_dim, 1)
 
-    def forward(self, x):
+    def encode(self, x):
+        """
+        只完成 Focus Attention 特征编码，
+        不进行 7 个焦平面的最终融合。
+        Input:
+            x: [B, 7, 512]
+        Output:
+            x: [B, 7, 512]
+        """
         x = x + self.focus_embedding.unsqueeze(0)
         x = self.encoder(x)
         x = self.final_norm(x)
+        return x
+
+    def fuse(self, x):
+        """
+        对已经编码后的 7 个焦平面进行融合。
+        Input:
+            x: [B, 7, 512]
+        Output:
+            fused: [B, 512]
+            weight: [B, 7]
+        """
         score = self.score(x).squeeze(-1)
         weight = torch.softmax(score, dim=1)
         fused = torch.sum(x * weight.unsqueeze(-1), dim=1)
         return fused, weight
+
+    def forward(self, x, return_sequence=False):
+        """
+        Input:
+            x: [B, 7, 512]
+        return_sequence=False:
+            fused: [B,512]
+            weight: [B,7]
+        return_sequence=True:
+            sequence: [B,7,512]
+            fused: [B,512]
+            weight: [B,7]
+        """
+        sequence = self.encode(x)
+        fused, weight = self.fuse(sequence)
+        if return_sequence:
+            return sequence, fused, weight
 
 if __name__ == "__main__":
     model = FocusAttention(depth=2)
