@@ -6,7 +6,6 @@ SEED = 42
 BATCH_SIZE = 32
 EPOCHS = 50
 LR = 1e-4           # 注意力/分类头用正常学习率
-BACKBONE_LR = 1e-5  # 骨干解冻部分用极低学习率
 MIN_LR = 1e-7
 NUM_LAYERS = 2
 DROPOUT = 0.4
@@ -23,7 +22,7 @@ EARLY_STOPPING = True
 PATIENCE = 20
 MIN_DELTA = 0.0
 
-TRAIN_STAGE = "both"    #"coarse"、"fine"、"both"
+TRAIN_STAGE = "coarse"    #"coarse"、"fine"、"both"
 FROZEN = False
 LOAD_MODEL = False
 ENABLE_CLASS_FILTER = True
@@ -44,6 +43,7 @@ DATA_ROOT = DATA_ROOT_R
 RUN_DIR = PROJECT_ROOT / "run"
 # 保存
 SAVE_MODEL_DIR = PROJECT_ROOT / "checkpoints" / CURRENT_MODEL
+MODEL_DIR = SAVE_MODEL_DIR / "best_model.pth"
 TEST_MODEL_DIR = PROJECT_ROOT / "checkpoints" / CURRENT_MODEL / "best_model.pth"
 # 测试结果
 SAVE_RESULT_DIR = RUN_DIR / "per_class_accuracy.csv"

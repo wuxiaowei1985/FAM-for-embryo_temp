@@ -90,6 +90,8 @@ class FocusAttention(nn.Module):
         fused, weight = self.fuse(sequence)
         if return_sequence:
             return sequence, fused, weight
+        else:
+            return fused, weight
 
 if __name__ == "__main__":
     model = FocusAttention(depth=2)

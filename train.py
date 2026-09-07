@@ -12,102 +12,147 @@ from utils.history import History
 from utils.plot import plot_training_curve
 from utils.get_model import build_model
 
-def main():
-    model = build_model(cfg.CURRENT_MODEL)
-    # ---- 新增加载逻辑 ----
-    if cfg.LOAD_MODEL:
-        print(f"Loading pretrained model from {cfg.TEST_MODEL_DIR}")
-        checkpoint = torch.load(cfg.TEST_MODEL_DIR, map_location=cfg.DEVICE)
-        model.load_state_dict(checkpoint['model'])
-        print("Loaded successfully.")
-    else:
-        print("No pretrained model found, starting from scratch.")
-    # ---------------------
-    history = History()
-    criterion = nn.CrossEntropyLoss(label_smoothing=0.05)
-    optimizer = torch.optim.Adam(
-        model.parameters(),
-        lr=cfg.LR,
-        weight_decay=1e-4
-    )
-    loader = train_loader
-    if cfg.FROZEN:
-        # ============ 精细冻结/解冻策略 ============
-        for name, param in model.named_parameters():
-            param.requires_grad = False  # 默认全部冻结
-            # 解冻 FocusAttention 和 ClassificationHead（必须可训练）
-        for name, param in model.named_parameters():
-            if 'fusion' in name or 'head' in name or 'focus_embedding' in name:
-                param.requires_grad = True
-        # 【新增】解冻 ResNet18 的 layer3 和 layer4（让视觉特征适配胚胎）
-        for name, param in model.named_parameters():
-            if 'encoder' in name:
-                if 'layer3' in name or 'layer4' in name:
-                    param.requires_grad = True
-                # 可选：同时解冻最后的 BN 层（通常建议）
-                if 'bn' in name and ('layer3' in name or 'layer4' in name):
-                    param.requires_grad = True
-        optimizer = torch.optim.Adam([
-            {'params': [p for n, p in model.named_parameters() if 'encoder' in n and p.requires_grad],
-             'lr': cfg.BACKBONE_LR,
-             'weight_decay': 1e-4},
-            {'params': [p for n, p in model.named_parameters() if 'encoder' not in n and p.requires_grad],
-             'lr': cfg.LR * 5,
-             'weight_decay': 1e-4}
-        ])
-    # 改用 ReduceLROnPlateau：监控验证损失，若连续 5 个 epoch 不降，LR 乘 0.5
+# ============================================================
+# Phase 1：冻结策略
+# ============================================================
+def freeze_for_phase2(model):
+    print("\n" + "=" * 60)
+    print("Applying Phase 2 freezing strategy")
+    print("=" * 60)
+    # --------------------------------------------------------
+    # 先全部冻结
+    # --------------------------------------------------------
+    for param in model.parameters():
+        param.requires_grad = False
+    # --------------------------------------------------------
+    # Phase 2 可训练模块
+    # coarse_embedding
+    # MSFD Attention
+    # 3个 fine heads
+    # --------------------------------------------------------
+    for param in model.coarse_embedding.parameters():
+        param.requires_grad = True
+    for param in model.msfd_attention.parameters():
+        param.requires_grad = True
+    for param in model.pronuclear_head.parameters():
+        param.requires_grad = True
+    for param in model.cleavage_head.parameters():
+        param.requires_grad = True
+    for param in model.blastocyst_head.parameters():
+        param.requires_grad = True
+# ============================================================
+# 创建 optimizer
+# ============================================================
+def create_optimizer(model, lr):
+    trainable_params = [p for p in model.parameters() if p.requires_grad]
+    optimizer = torch.optim.Adam(trainable_params, lr=lr, weight_decay=1e-4)
+    return optimizer
+# ============================================================
+# 创建 scheduler
+# ============================================================
+def create_scheduler(optimizer):
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer,
-        mode='min',  # 监控验证损失是否下降
-        factor=0.5,  # 每次降低一半
-        patience=5,  # 5 个 epoch 不降就触发
-        min_lr=cfg.MIN_LR,  # 最低 1e-6
-        verbose=True
+        mode="min",
+        factor=0.5,
+        patience=5,
+        min_lr=cfg.MIN_LR
     )
-    early_stopping = EarlyStopping(
-        patience=cfg.PATIENCE,
-        min_delta=cfg.MIN_DELTA,
-        save_path=cfg.SAVE_MODEL_DIR / "best_model.pth",
-    )
-    trainer = Trainer(
-        model,
-        criterion=criterion,
-        optimizer=optimizer,
-        device=cfg.DEVICE
-    )
-    validator = Validator(
-        model,
-        criterion=criterion,
-        device=cfg.DEVICE
-    )
+    return scheduler
+# ============================================================
+# Phase 1
+# ============================================================
+def train_phase1(model):
+    print("\n")
+    print("=" * 70)
+    print("PHASE 1: COARSE STAGE TRAINING")
+    print("=" * 70)
+    # --------------------------------------------------------
+    # Phase 1 所有模块都可以训练
+    # --------------------------------------------------------
+    for param in model.parameters():
+        param.requires_grad = False
+    for param in model.encoder.parameters():
+        param.requires_grad = True
+    for param in model.focus_attention.parameters():
+        param.requires_grad = True
+    for param in model.coarse_head.parameters():
+        param.requires_grad = True
+    # --------------------------------------------------------
+    # optimizer
+    # --------------------------------------------------------
+    optimizer = create_optimizer(model, cfg.LR)
+    scheduler = create_scheduler(optimizer)
+    # --------------------------------------------------------
+    # loss
+    # --------------------------------------------------------
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.05)
+    # --------------------------------------------------------
+    # Trainer
+    # --------------------------------------------------------
+    trainer = Trainer(model=model, criterion=criterion, optimizer=optimizer, device=cfg.DEVICE, stage="coarse")
+    validator = Validator(model=model, criterion=criterion, device=cfg.DEVICE, stage="coarse")
+    # --------------------------------------------------------
+    # Early stopping
+    # --------------------------------------------------------
+    early_stopping = EarlyStopping(patience=cfg.PATIENCE, min_delta=cfg.MIN_DELTA, save_path=cfg.SAVE_MODEL_DIR / "best_model.pth")
+    # --------------------------------------------------------
+    # History
+    # --------------------------------------------------------
+    history = History()
+    # --------------------------------------------------------
+    # training loop
+    # --------------------------------------------------------
     for epoch in range(cfg.EPOCHS):
-        print("=" * 60)
-        print(f"Epoch {epoch+1}")
-        train_loss, train_acc = trainer.train_one_epoch(loader)
+        print("\n" + "=" * 60)
+        print(f"Phase 1 | Epoch " f"{epoch + 1}/" f"{cfg.EPOCHS}")
+        # ----------------------------------------------------
+        # train
+        # ----------------------------------------------------
+        train_loss, train_acc = trainer.train_one_epoch(train_loader)
+        # ----------------------------------------------------
+        # validation
+        # ----------------------------------------------------
         val_loss, val_acc = validator.validate(val_loader)
-        if cfg.EARLY_STOPPING:
-            stop = early_stopping(val_acc=val_acc, model=model, optimizer=optimizer, scheduler=scheduler, epoch=epoch)
-            print(f"Train Loss : {train_loss:.4f}")
-            print(f"Train Acc  : {train_acc:.4f}")
-            print(f"Val Loss   : {val_loss:.4f}")
-            print(f"Val Acc    : {val_acc:.4f}")
-            lr_list = scheduler.get_last_lr()
-            if cfg.FROZEN:
-                print(f"LR Backbone: {lr_list[0]:.8f}")
-                print(f"LR FH:       {lr_list[1]:.8f}")
-                history.update(epoch=epoch + 1, train_loss=train_loss, val_loss=val_loss, train_acc=train_acc, val_acc=val_acc, lr_backbone=lr_list[0], lr_fh=lr_list[1])
-            else:
-                print(f"LR :         {lr_list[0]:.8f}")
-                history.update(epoch=epoch + 1, train_loss=train_loss, val_loss=val_loss, train_acc=train_acc, val_acc=val_acc, lr_backbone=lr_list[0], lr_fh=lr_list[0])
-            scheduler.step(val_loss)
-            if stop:
-                print("=" * 60)
-                print("Early stopping triggered.")
-                print("=" * 60)
-                break
-
+        # ----------------------------------------------------
+        # scheduler
+        # ----------------------------------------------------
+        scheduler.step(val_loss)
+        # ----------------------------------------------------
+        # early stopping
+        # 你之前已经改成根据 accuracy
+        # ----------------------------------------------------
+        stop = early_stopping(val_acc=val_acc, model=model, optimizer=optimizer, scheduler=scheduler, epoch=epoch)
+        # ----------------------------------------------------
+        # log
+        # ----------------------------------------------------
+        lr = optimizer.param_groups[0]["lr"]
+        print(f"Train Loss : " f"{train_loss:.4f}")
+        print(f"Train Acc  : " f"{train_acc:.4f}")
+        print(f"Val Loss   : " f"{val_loss:.4f}")
+        print(f"Val Acc    : " f"{val_acc:.4f}")
+        print(f"LR         : " f"{lr:.8f}")
+        history.update(
+            epoch=epoch + 1,
+            train_loss=train_loss,
+            val_loss=val_loss,
+            train_acc=train_acc,
+            val_acc=val_acc,
+            lr=lr,
+        )
+        # ----------------------------------------------------
+        # early stop
+        # ----------------------------------------------------
+        if stop:
+            print("\n" + "=" * 60)
+            print("Phase 1 early stopping triggered.")
+            print("=" * 60)
+            break
+    # --------------------------------------------------------
+    # save last
+    # --------------------------------------------------------
     checkpoint = {
-        "epoch": epoch+1,
+        "epoch": epoch + 1,
         "model": model.state_dict(),
         "optimizer": optimizer.state_dict(),
         "scheduler": scheduler.state_dict(),
@@ -117,7 +162,137 @@ def main():
     history.save(cfg.HISTORY_CSV)
     plot_training_curve(cfg.HISTORY_CSV, cfg.RUN_DIR)
     print("plot and history saved")
-
+    return model
+# ============================================================
+# Phase 2
+# ============================================================
+def train_phase2(model):
+    print("\n")
+    print("=" * 70)
+    print("PHASE 2: FINE-GRAINED TRAINING")
+    print("=" * 70)
+    # --------------------------------------------------------
+    # 加载 Phase 1 best
+    # --------------------------------------------------------
+    checkpoint = torch.load(cfg.MODEL_DIR, map_location=cfg.DEVICE)
+    model.load_state_dict(checkpoint["model"])
+    print("Phase 1 checkpoint loaded successfully.")
+    # --------------------------------------------------------
+    # 冻结
+    # --------------------------------------------------------
+    freeze_for_phase2(model)
+    # --------------------------------------------------------
+    # optimizer
+    # --------------------------------------------------------
+    optimizer = create_optimizer(model, cfg.LR)
+    scheduler = create_scheduler(optimizer)
+    # --------------------------------------------------------
+    # loss
+    # --------------------------------------------------------
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.05)
+    # --------------------------------------------------------
+    # Trainer
+    # --------------------------------------------------------
+    trainer = Trainer(model=model, criterion=criterion, optimizer=optimizer, device=cfg.DEVICE, stage="fine")
+    validator = Validator(model=model, criterion=criterion, device=cfg.DEVICE, stage="fine")
+    # --------------------------------------------------------
+    # Early stopping
+    # --------------------------------------------------------
+    early_stopping = EarlyStopping(patience=cfg.PATIENCE, min_delta=cfg.MIN_DELTA, save_path=cfg.SAVE_MODEL_DIR)
+    # --------------------------------------------------------
+    # History
+    # --------------------------------------------------------
+    history = History()
+    # --------------------------------------------------------
+    # training
+    # --------------------------------------------------------
+    for epoch in range(cfg.EPOCHS):
+        print("\n" + "=" * 60)
+        print(f"Phase 2 | Epoch " f"{epoch + 1}/" f"{cfg.EPOCHS}")
+        # ----------------------------------------------------
+        # train
+        # ----------------------------------------------------
+        train_loss, train_acc = trainer.train_one_epoch(train_loader)
+        # ----------------------------------------------------
+        # validation
+        # 注意：这里的 val_acc 是最终16分类 accuracy
+        # ----------------------------------------------------
+        val_loss, val_acc = validator.validate(val_loader)
+        # ----------------------------------------------------
+        # scheduler
+        # ----------------------------------------------------
+        scheduler.step(val_loss)
+        # ----------------------------------------------------
+        # early stopping
+        # ----------------------------------------------------
+        stop = early_stopping(val_acc=val_acc, model=model, optimizer=optimizer, scheduler=scheduler, epoch=epoch)
+        # ----------------------------------------------------
+        # log
+        # ----------------------------------------------------
+        lr = optimizer.param_groups[0]["lr"]
+        print(f"Train Loss : " f"{train_loss:.4f}")
+        print(f"Train Fine Acc : " f"{train_acc:.4f}")
+        print(f"Val Loss   : " f"{val_loss:.4f}")
+        print(f"Val 16-class Acc : " f"{val_acc:.4f}")
+        print(f"LR         : " f"{lr:.8f}")
+        history.update(
+            epoch=epoch + 1,
+            train_loss=train_loss,
+            val_loss=val_loss,
+            train_acc=train_acc,
+            val_acc=val_acc,
+            lr=lr
+        )
+        # ----------------------------------------------------
+        # early stopping
+        # ----------------------------------------------------
+        if stop:
+            print("\n" + "=" * 60)
+            print("Phase 2 early stopping triggered.")
+            print("=" * 60)
+            break
+    # --------------------------------------------------------
+    # save last
+    # --------------------------------------------------------
+    checkpoint = {
+        "epoch": epoch + 1,
+        "model": model.state_dict(),
+        "optimizer": optimizer.state_dict(),
+        "scheduler": scheduler.state_dict(),
+    }
+    torch.save(checkpoint, cfg.SAVE_MODEL_DIR)
+    print("last model saved")
+    history.save(cfg.HISTORY_CSV)
+    plot_training_curve(cfg.HISTORY_CSV, cfg.RUN_DIR)
+    print("plot and history saved")
+    return model
+# ============================================================
+# Main
+# ============================================================
+def main():
+    # --------------------------------------------------------
+    # build model
+    # --------------------------------------------------------
+    model = build_model(cfg.CURRENT_MODEL)
+    model = model.to(cfg.DEVICE)
+    # --------------------------------------------------------
+    # Phase 1
+    # --------------------------------------------------------
+    if cfg.TRAIN_STAGE in ["coarse", "both"]:
+        model = train_phase1(model)
+    # --------------------------------------------------------
+    # Phase 2
+    # --------------------------------------------------------
+    if cfg.TRAIN_STAGE in ["fine", "both"]:
+        # 如果只训练 Phase 2
+        # 则直接加载 Phase 1
+        if cfg.TRAIN_STAGE == "fine":
+            model = train_phase2(model)
+        else:
+            model = train_phase2(model)
+    print("\n" + "=" * 70)
+    print("Training completed.")
+    print("=" * 70)
 
 if __name__ == "__main__":
     main()

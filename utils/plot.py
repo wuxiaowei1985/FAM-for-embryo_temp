@@ -1,19 +1,5 @@
 import matplotlib.pyplot as plt
 import pandas as pd
-from configs import config as cfg
-
-def plot_lr(save_dir, history, title):
-    plt.figure(figsize=(8, 5))
-    lr_name = title
-    if title == "Learning Rate":
-        lr_name = "lr_backbone"
-    plt.plot(history["epoch"], history[lr_name], linewidth=2, color='blue')
-    plt.xlabel("Epoch")
-    plt.ylabel(f"{title}")
-    plt.grid(True)
-    plt.tight_layout()
-    plt.savefig(save_dir / f"{title}.png", dpi=300)
-    plt.close()
 
 def plot_training_curve(csv_path, save_dir):
     history = pd.read_csv(csv_path)
@@ -40,8 +26,11 @@ def plot_training_curve(csv_path, save_dir):
     plt.savefig(save_dir / "accuracy_curve.png", dpi=300)
     plt.close()
     # Learning Rate
-    if cfg.FROZEN:
-        plot_lr(save_dir, history, "lr_backbone")
-        plot_lr(save_dir, history, "lr_fh")
-    else:
-        plot_lr(save_dir, history, "Learning Rate")
+    plt.figure(figsize=(8, 5))
+    plt.plot(history["epoch"], history["lr"], linewidth=2, color='blue')
+    plt.xlabel("Epoch")
+    plt.ylabel("Learning Rate")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(save_dir / "Learning Rate.png", dpi=300)
+    plt.close()
