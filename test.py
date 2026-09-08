@@ -4,9 +4,10 @@ from sklearn.metrics import classification_report, confusion_matrix
 from configs import config as cfg
 from dataset.loader import test_loader
 from utils.get_model import build_model
+from dataset.labels import LABEL_NAMES
 
-CLASS_NAMES = ["tPB2", "tPNa", "tPNf", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9+", "tM", "tSB", "tB", "tEB", "tHB"]
-CLASSES_NUM = len(CLASS_NAMES)
+CLASSES_NUM = len(LABEL_NAMES)
+
 def main():
     model = build_model(cfg.CURRENT_MODEL)
     checkpoint = torch.load(cfg.TEST_MODEL_DIR, map_location=cfg.DEVICE)
@@ -46,12 +47,12 @@ def main():
         else:
             acc = (correct_per_class[i].item() / total_per_class[i].item() * 100)
         print(
-            f"{CLASS_NAMES[i]:5s}"
+            f"{LABEL_NAMES[i]:5s}"
             f"   {correct_per_class[i]:4d}/{total_per_class[i]:4d}"
             f"   Accuracy = {acc:.2f}%"
         )
         result.append({
-            "Stage": CLASS_NAMES[i],
+            "Stage": LABEL_NAMES[i],
             "Correct": int(correct_per_class[i]),
             "Total": int(total_per_class[i]),
             "Accuracy(%)": round(acc, 2)
@@ -70,14 +71,14 @@ def main():
     report_text = classification_report(
         all_labels, all_preds,
         labels=list(range(CLASSES_NUM)),
-        target_names=CLASS_NAMES,
+        target_names=LABEL_NAMES,
         digits=4,
         zero_division=0
     )
     report_dict = classification_report(
         all_labels, all_preds,
         labels=list(range(CLASSES_NUM)),
-        target_names=CLASS_NAMES,
+        target_names=LABEL_NAMES,
         digits=4,
         zero_division=0,
         output_dict=True
@@ -87,7 +88,7 @@ def main():
     # 保存为CSV（DataFrame）
     # 从字典中提取每类的指标，并转为DataFrame
     rows = []
-    for class_name in CLASS_NAMES:
+    for class_name in LABEL_NAMES:
         if class_name in report_dict:
             metrics = report_dict[class_name]
             rows.append({
@@ -123,7 +124,7 @@ def main():
     cm = confusion_matrix(all_labels, all_preds, labels=list(range(CLASSES_NUM)))
     print("\nConfusion Matrix\n")
     print(cm)
-    cm_df = pd.DataFrame(cm, index=CLASS_NAMES, columns=CLASS_NAMES)
+    cm_df = pd.DataFrame(cm, index=LABEL_NAMES, columns=LABEL_NAMES)
     cm_df.to_csv(cfg.SAVE_CM_DIR, encoding="utf-8-sig")
 
 if __name__ == "__main__":

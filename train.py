@@ -45,7 +45,7 @@ def freeze_for_phase2(model):
 # ============================================================
 def create_optimizer(model, lr):
     trainable_params = [p for p in model.parameters() if p.requires_grad]
-    optimizer = torch.optim.Adam(trainable_params, lr=lr, weight_decay=1e-4)
+    optimizer = torch.optim.AdamW(trainable_params, lr=lr, weight_decay=cfg.WEIGHT_DECAY)
     return optimizer
 # ============================================================
 # 创建 scheduler
@@ -54,8 +54,8 @@ def create_scheduler(optimizer):
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer,
         mode="min",
-        factor=0.5,
-        patience=5,
+        factor=cfg.FACTOR,
+        patience=cfg.SCHEDULER_PATIENCE,
         min_lr=cfg.MIN_LR
     )
     return scheduler
@@ -86,7 +86,7 @@ def train_phase1(model):
     # --------------------------------------------------------
     # loss
     # --------------------------------------------------------
-    criterion = nn.CrossEntropyLoss(label_smoothing=0.05)
+    criterion = nn.CrossEntropyLoss(label_smoothing=cfg.LABEL_SMOOTHING)
     # --------------------------------------------------------
     # Trainer
     # --------------------------------------------------------
@@ -95,7 +95,7 @@ def train_phase1(model):
     # --------------------------------------------------------
     # Early stopping
     # --------------------------------------------------------
-    early_stopping = EarlyStopping(patience=cfg.PATIENCE, min_delta=cfg.MIN_DELTA, save_path=cfg.SAVE_MODEL_DIR / "best_model.pth")
+    early_stopping = EarlyStopping(patience=cfg.EARLY_STOPPING_PATIENCE, min_delta=cfg.MIN_DELTA, save_path=cfg.PHASE1_BEST_MODEL)
     # --------------------------------------------------------
     # History
     # --------------------------------------------------------
@@ -157,12 +157,11 @@ def train_phase1(model):
         "optimizer": optimizer.state_dict(),
         "scheduler": scheduler.state_dict(),
     }
-    torch.save(checkpoint, cfg.SAVE_MODEL_DIR / "last_model.pth")
+    torch.save(checkpoint, cfg.PHASE1_LAST_MODEL)
     print("last model saved")
-    history.save(cfg.HISTORY_CSV)
-    plot_training_curve(cfg.HISTORY_CSV, cfg.RUN_DIR)
+    history.save(cfg.PHASE1_SAVE / "history.csv")
+    plot_training_curve(cfg.PHASE1_SAVE / "history.csv", cfg.PHASE1_SAVE)
     print("plot and history saved")
-    return model
 # ============================================================
 # Phase 2
 # ============================================================
@@ -174,7 +173,7 @@ def train_phase2(model):
     # --------------------------------------------------------
     # 加载 Phase 1 best
     # --------------------------------------------------------
-    checkpoint = torch.load(cfg.MODEL_DIR, map_location=cfg.DEVICE)
+    checkpoint = torch.load(cfg.PHASE2_MODEL, map_location=cfg.DEVICE)
     model.load_state_dict(checkpoint["model"])
     print("Phase 1 checkpoint loaded successfully.")
     # --------------------------------------------------------
@@ -189,7 +188,7 @@ def train_phase2(model):
     # --------------------------------------------------------
     # loss
     # --------------------------------------------------------
-    criterion = nn.CrossEntropyLoss(label_smoothing=0.05)
+    criterion = nn.CrossEntropyLoss(label_smoothing=cfg.LABEL_SMOOTHING)
     # --------------------------------------------------------
     # Trainer
     # --------------------------------------------------------
@@ -198,7 +197,7 @@ def train_phase2(model):
     # --------------------------------------------------------
     # Early stopping
     # --------------------------------------------------------
-    early_stopping = EarlyStopping(patience=cfg.PATIENCE, min_delta=cfg.MIN_DELTA, save_path=cfg.SAVE_MODEL_DIR)
+    early_stopping = EarlyStopping(patience=cfg.EARLY_STOPPING_PATIENCE, min_delta=cfg.MIN_DELTA, save_path=cfg.PHASE2_BEST_MODEL)
     # --------------------------------------------------------
     # History
     # --------------------------------------------------------
@@ -260,12 +259,11 @@ def train_phase2(model):
         "optimizer": optimizer.state_dict(),
         "scheduler": scheduler.state_dict(),
     }
-    torch.save(checkpoint, cfg.SAVE_MODEL_DIR)
+    torch.save(checkpoint, cfg.PHASE2_LAST_MODEL)
     print("last model saved")
-    history.save(cfg.HISTORY_CSV)
-    plot_training_curve(cfg.HISTORY_CSV, cfg.RUN_DIR)
+    history.save(cfg.PHASE2_SAVE / "history.csv")
+    plot_training_curve(cfg.PHASE2_SAVE / "history.csv", cfg.PHASE2_SAVE)
     print("plot and history saved")
-    return model
 # ============================================================
 # Main
 # ============================================================
@@ -279,17 +277,14 @@ def main():
     # Phase 1
     # --------------------------------------------------------
     if cfg.TRAIN_STAGE in ["coarse", "both"]:
-        model = train_phase1(model)
+        train_phase1(model)
     # --------------------------------------------------------
     # Phase 2
     # --------------------------------------------------------
     if cfg.TRAIN_STAGE in ["fine", "both"]:
         # 如果只训练 Phase 2
         # 则直接加载 Phase 1
-        if cfg.TRAIN_STAGE == "fine":
-            model = train_phase2(model)
-        else:
-            model = train_phase2(model)
+        train_phase2(model)
     print("\n" + "=" * 70)
     print("Training completed.")
     print("=" * 70)
