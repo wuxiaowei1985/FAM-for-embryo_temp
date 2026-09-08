@@ -47,8 +47,3 @@ PHASE2_SAVE = RUN_DIR / "phase2"
 SAVE_RESULT_DIR = RUN_DIR / "per_class_accuracy.csv"
 SAVE_CM_DIR = RUN_DIR / "confusion_matrix.csv"
 SAVE_REPORT_DIR = RUN_DIR / "classification_report.csv"
-
-if __name__ == "__main__":
-    PHASE1_SAVE.mkdir(parents=True, exist_ok=True)
-    PHASE2_SAVE.mkdir(parents=True, exist_ok=True)
-    SAVE_MODEL_DIR.mkdir(parents=True, exist_ok=True)

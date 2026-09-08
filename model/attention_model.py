@@ -68,14 +68,11 @@ class HierarchicalFocusAttentionModel(nn.Module):
     def forward_fine(self, images, return_dict=False):
         sequence, fused, focus_attention = self.extract_focus_features(images)
         # -----------------------------------------------------
-        # Coarse prediction
-        # 第一阶段模块被冻结
-        # -----------------------------------------------------
-        coarse_logits = self.coarse_head(fused)
-        coarse_probs = torch.softmax(coarse_logits, dim=1)
-        # -----------------------------------------------------
         # Coarse semantic embedding
         # -----------------------------------------------------
+        with torch.no_grad():
+            coarse_logits = self.coarse_head(fused)
+            coarse_probs = torch.softmax(coarse_logits, dim=1)
         coarse_embedding = self.coarse_embedding(coarse_probs)
         # [B,512] → [B,1,512] → [B,7,512]
         coarse_embedding = coarse_embedding.unsqueeze(1)

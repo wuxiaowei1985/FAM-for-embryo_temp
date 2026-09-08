@@ -230,7 +230,7 @@ def train_phase2(model):
         # ----------------------------------------------------
         lr = optimizer.param_groups[0]["lr"]
         print(f"Train Loss : " f"{train_loss:.4f}")
-        print(f"Train Fine Acc : " f"{train_acc:.4f}")
+        print(f"Train Conditional Fine Acc : " f"{train_acc:.4f}")
         print(f"Val Loss   : " f"{val_loss:.4f}")
         print(f"Val 16-class Acc : " f"{val_acc:.4f}")
         print(f"LR         : " f"{lr:.8f}")
@@ -290,4 +290,7 @@ def main():
     print("=" * 70)
 
 if __name__ == "__main__":
+    cfg.PHASE1_SAVE.mkdir(parents=True, exist_ok=True)
+    cfg.PHASE2_SAVE.mkdir(parents=True, exist_ok=True)
+    cfg.SAVE_MODEL_DIR.mkdir(parents=True, exist_ok=True)
     main()
