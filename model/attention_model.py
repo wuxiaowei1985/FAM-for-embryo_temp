@@ -53,15 +53,15 @@ class HierarchicalFocusAttentionModel(nn.Module):
     # =========================================================
     def forward_coarse(self, images, return_dict=False):
         sequence, fused, attention = self.extract_focus_features(images)
-        logits = self.coarse_head(fused)
+        coarse_logits = self.coarse_head(fused)
         if return_dict:
             return {
-                "logits": logits,
+                "coarse_logits": coarse_logits,
                 "attention": attention,
                 "feature": fused,
                 "sequence": sequence
             }
-        return logits
+        return coarse_logits
     # =========================================================
     # Phase 2
     # =========================================================
