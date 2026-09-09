@@ -32,28 +32,15 @@ class MultiScaleFocusDeformableAttention(nn.Module):
         self.num_points = num_points
         self.head_dim = feature_dim // num_heads
         # ---------------------------------------------------------
-        # Query / Value projection
+        # Value projection
         # ---------------------------------------------------------
-        self.q_proj = nn.Linear(feature_dim, feature_dim)
         self.v_proj = nn.Linear(feature_dim, feature_dim)
         self.out_proj = nn.Linear(feature_dim, feature_dim)
-        # ---------------------------------------------------------
-        # 预测每一个 query 的 sampling offsets
-        # 每个 query:
-        #   num_heads
-        #   × num_levels
-        #   × num_points
-        # 每个 sampling point 只有一个 1D offset
-        # ---------------------------------------------------------
         self.sampling_offsets = nn.Linear(feature_dim, num_heads * num_levels * num_points)
         # ---------------------------------------------------------
         # 预测 attention weights
         # ---------------------------------------------------------
         self.attention_weights = nn.Linear(feature_dim, num_heads * num_levels * num_points)
-        # ---------------------------------------------------------
-        # LayerNorm
-        # ---------------------------------------------------------
-        self.norm = nn.LayerNorm(feature_dim)
         self.dropout = nn.Dropout(dropout)
         # ---------------------------------------------------------
         # 初始化
@@ -177,17 +164,6 @@ class MultiScaleFocusDeformableAttention(nn.Module):
         """
         B, num_focus, D = x.shape
         # ---------------------------------------------------------
-        # Pre-normalization
-        # ---------------------------------------------------------
-        identity = x
-        x = self.norm(x)
-        # ---------------------------------------------------------
-        # Query
-        # ---------------------------------------------------------
-        query = self.q_proj(x)
-        query = query.view(B, num_focus, self.num_heads, self.head_dim)
-        query = query.permute(0, 2, 1, 3).contiguous()
-        # ---------------------------------------------------------
         # Value
         # ---------------------------------------------------------
         value = self.v_proj(x)
@@ -290,10 +266,6 @@ class MultiScaleFocusDeformableAttention(nn.Module):
         # ---------------------------------------------------------
         output = self.out_proj(output)
         output = self.dropout(output)
-        # ---------------------------------------------------------
-        # Residual
-        # ---------------------------------------------------------
-        output = identity + output
         return output
 
 class MultiScaleFocusDeformableAttentionBlock(nn.Module):

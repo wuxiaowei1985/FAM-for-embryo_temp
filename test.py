@@ -22,8 +22,7 @@ def get_final_probs(output):
     # --------------------------------------------------------
     # Coarse probability
     # --------------------------------------------------------
-    coarse_logits = output["coarse_logits"]
-    coarse_probs = torch.softmax(coarse_logits, dim=1)
+    coarse_probs = output["coarse_probs"]
     # --------------------------------------------------------
     # Fine probability
     # --------------------------------------------------------
