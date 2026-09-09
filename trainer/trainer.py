@@ -274,8 +274,8 @@ class Trainer:
             # Statistics
             # =================================================
             total_loss += (loss.item() * valid_sample_count)
-            fine_correct += (batch_fine_correct)
-            fine_total += (valid_sample_count)
+            fine_correct += batch_fine_correct
+            fine_total += valid_sample_count
             # =================================================
             # Progress
             # =================================================
