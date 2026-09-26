@@ -2,281 +2,88 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class MultiScaleFocusDeformableAttention(nn.Module):
+class MultiScaleDeformableAttention3D(nn.Module):
     """
-    Multi-Scale Deformable Multi-Head Attention
-    for 1D focus-plane sequence.
-    输入:
-        x: [B, F, D]
-           B = batch size
-           F = focus planes, 当前为 7
-           D = feature dimension, 当前为 512
-    输出:
-        out: [B, F, D]
-    这里将 7 个焦平面视为沿 Z 轴排列的 1D reference points，
-    并构造多个 focus scales。
-    Scale 1:
-        7 个焦平面
-    Scale 2:
-        4 个粗粒度焦平面
-    Scale 3:
-        2 个更粗粒度焦平面
+    Query:
+        [B, N, D]
+    Value levels:
+        p2: [B, D, F, H2, W2]
+        p3: [B, D, F, H3, W3]
+        p4: [B, D, F, H4, W4]
     """
-    def __init__(self, feature_dim=512, num_heads=8, num_levels=3, num_points=4, dropout=0.1):
+    def __init__(self, feature_dim=256, num_heads=8, num_levels=3, num_points=4, dropout=0.1):
         super().__init__()
-        assert feature_dim % num_heads == 0, \
-            "feature_dim 必须能够被 num_heads 整除"
+        assert feature_dim % num_heads == 0
         self.feature_dim = feature_dim
         self.num_heads = num_heads
         self.num_levels = num_levels
         self.num_points = num_points
         self.head_dim = feature_dim // num_heads
-        # ---------------------------------------------------------
-        # Value projection
-        # ---------------------------------------------------------
-        self.v_proj = nn.Linear(feature_dim, feature_dim)
-        self.out_proj = nn.Linear(feature_dim, feature_dim)
-        self.sampling_offsets = nn.Linear(feature_dim, num_heads * num_levels * num_points)
-        # ---------------------------------------------------------
-        # 预测 attention weights
-        # ---------------------------------------------------------
+        self.sampling_offsets = nn.Linear(feature_dim, num_heads * num_levels * num_points * 3)
         self.attention_weights = nn.Linear(feature_dim, num_heads * num_levels * num_points)
+        self.value_proj = nn.ModuleList([
+            nn.Conv3d(feature_dim, feature_dim, 1, bias=False)
+            for _ in range(num_levels)
+        ])
+        self.output_proj = nn.Linear(feature_dim, feature_dim)
         self.dropout = nn.Dropout(dropout)
-        # ---------------------------------------------------------
-        # 初始化
-        # offsets 初始为 0
-        # 让模型刚开始训练时先接近普通 attention，
-        # 避免一开始 sampling 位置完全随机。
-        # ---------------------------------------------------------
-        nn.init.constant_(self.sampling_offsets.weight, 0.0)
-        nn.init.constant_(self.sampling_offsets.bias, 0.0)
-        nn.init.constant_(self.attention_weights.weight, 0.0)
-        nn.init.constant_(self.attention_weights.bias, 0.0)
+        nn.init.zeros_(self.sampling_offsets.weight)
+        nn.init.zeros_(self.sampling_offsets.bias)
+        nn.init.zeros_(self.attention_weights.weight)
+        nn.init.zeros_(self.attention_weights.bias)
 
-    def _build_multi_scale_features(self, x):
+    def _sample_level(self, value, locations):
         """
-        构造多尺度焦平面特征。
-        输入:
-            x: [B, N, D]
-            B = batch size
-            N = focus planes
-            D = feature dimension
-        返回:
-            multi_scale:
-                [
-                    [B, 7, 512],
-                    [B, 4, 512],
-                    [B, 2, 512]
-                ]
+        value: [B,H,Dh,F,Hs,Ws]
+        locations: [B,H,N,P,3] in normalized [0,1] z/y/x order
+        returns: [B,H,N,P,Dh]
         """
-        B, num_focus, D = x.shape
-        # ---------------------------------------------------------
-        # Scale 1
-        # 原始焦平面特征
-        # [B, 7, D]
-        # ---------------------------------------------------------
-        scale1 = x
-        # ---------------------------------------------------------
-        # Scale 2
-        # 7 → 4
-        # 在 focus dimension 上进行自适应平均池化
-        # [B,7,D]
-        #     ↓ transpose
-        # [B,D,7]
-        #     ↓ adaptive_avg_pool1d
-        # [B,D,4]
-        #     ↓ transpose
-        # [B,4,D]
-        # ---------------------------------------------------------
-        scale2 = F.adaptive_avg_pool1d(x.transpose(1, 2), output_size=4).transpose(1, 2)
-        # ---------------------------------------------------------
-        # Scale 3
-        # 7 → 2
-        # [B,7,D]
-        #     ↓
-        # [B,D,7]
-        #     ↓
-        # [B,D,2]
-        #     ↓
-        # [B,2,D]
-        # ---------------------------------------------------------
-        scale3 = F.adaptive_avg_pool1d(x.transpose(1, 2), output_size=2).transpose(1, 2)
-        return [scale1, scale2, scale3]
-
-    def _sample_1d(self, value, positions):
-        """
-        对 1D focus sequence 进行可变形采样。
-        value:
-            [B, H, L, D]
-        positions:
-            [B, H, Q, P]
-        返回:
-            sampled:
-                [B, H, Q, P, D]
-        """
-        B, H, L, D = value.shape
-        _, _, Q, P = positions.shape
-        # ---------------------------------------------------------
-        # grid_sample 需要二维输入。
-        # 将 focus dimension L 看成 W，
-        # 高度维度设成 1。
-        # [B,H,L,D]
-        # → [B*H, D, 1, L]
-        # ---------------------------------------------------------
-        value = value.permute(0, 1, 3, 2).contiguous()
-        value = value.view( B * H, D, 1, L)
-        # ---------------------------------------------------------
-        # positions:
-        # [0, L-1]
-        # 转换到:
-        # [-1, 1]
-        # ---------------------------------------------------------
-        normalized = positions / max(L - 1, 1)
-        normalized = normalized * 2.0 - 1.0
-        # grid:
-        # [B*H, Q, P, 2]
-        # y 坐标固定为 0
-        # x 坐标使用 sampling position
-        # ---------------------------------------------------------
-        y = torch.zeros_like(normalized)
-        grid = torch.stack([normalized, y], dim=-1)
-        grid = grid.view(B * H, Q, P, 2)
+        B, heads, Dh, Fz, Hy, Wx = value.shape
+        _, _, N, P, _ = locations.shape
+        value = value.view(B * heads, Dh, Fz, Hy, Wx)
+        grid = locations[..., [2, 1, 0]] * 2.0 - 1.0
+        grid = grid.reshape(B * heads, N * P, 1, 1, 3)
         sampled = F.grid_sample(value, grid, mode="bilinear", padding_mode="border", align_corners=True)
-        # ---------------------------------------------------------
-        # sampled:
-        # [B*H, D, Q, P] → [B,H,Q,P,D]
-        # ---------------------------------------------------------
-        sampled = sampled.view( B, H, D, Q, P)
-        sampled = sampled.permute(0, 1, 3, 4, 2).contiguous()
-        return sampled
+        sampled = sampled.view(B, heads, Dh, N, P)
+        return sampled.permute(0, 1, 3, 4, 2).contiguous()
 
-    def forward(self, x):
-        """
-        Args:
-            x:
-                [B, N, D]
-            B = batch size
-            N = number of focus planes
-            D = feature dimension
-        Returns:
-            output:
-                [B, N, D]
-        """
-        B, num_focus, D = x.shape
-        # ---------------------------------------------------------
-        # Value
-        # ---------------------------------------------------------
-        value = self.v_proj(x)
-        # ---------------------------------------------------------
-        # Multi-scale features
-        # ---------------------------------------------------------
-        multi_scale = self._build_multi_scale_features(value)
-        # ---------------------------------------------------------
-        # Sampling offsets
-        # [B,N,D]→[B,N,H,L,P]
-        # ---------------------------------------------------------
-        offsets = self.sampling_offsets(x)
-        offsets = offsets.view(B, num_focus, self.num_heads, self.num_levels, self.num_points)
-        offsets = offsets.permute(0, 2, 1, 3, 4).contiguous()
-        # ---------------------------------------------------------
-        # Attention weights
-        # ---------------------------------------------------------
-        attention = self.attention_weights(x)
-        attention = attention.view(B, num_focus, self.num_heads, self.num_levels, self.num_points)
-        attention = attention.permute(0, 2, 1, 3, 4).contiguous()
-        # ---------------------------------------------------------
-        # Softmax over:
-        # level × sampling point
-        # ---------------------------------------------------------
-        attention = attention.view( B, self.num_heads, num_focus, self.num_levels * self.num_points)
-        attention = torch.softmax(attention, dim=-1)
-        attention = attention.view(B, self.num_heads, num_focus, self.num_levels, self.num_points)
-        # ---------------------------------------------------------
-        # Reference positions
-        # ---------------------------------------------------------
-        reference_positions = []
-        for level, feature in enumerate(multi_scale):
-            L = feature.shape[1]
-            if num_focus == 1:
-                ref = torch.zeros(B, self.num_heads, num_focus, device=x.device, dtype=x.dtype)
-            else:
-                base = torch.arange(num_focus, device=x.device, dtype=x.dtype)
-                # [0, N-1]
-                base = base / (num_focus - 1)
-                # 映射到当前 level
-                # [0, L-1]
-                base = base * (L - 1)
-                ref = base.view(1, 1, num_focus).expand(B, self.num_heads, num_focus)
-            reference_positions.append(ref)
-        # ---------------------------------------------------------
-        # Output
-        # ---------------------------------------------------------
-        output = torch.zeros(B, self.num_heads, num_focus, self.head_dim, device=x.device, dtype=x.dtype)
-        # ---------------------------------------------------------
-        # Multi-scale deformable sampling
-        # ---------------------------------------------------------
-        for level in range(self.num_levels):
-            feature = multi_scale[level]
-            L = feature.shape[1]
-            reference = reference_positions[level]
-            # -----------------------------------------------------
-            # 当前 level 的 offset
-            # [B,H,N,P]
-            # -----------------------------------------------------
-            offset = offsets[:, :, :, level, :]
-            # 限制 sampling offset 范围
-            offset = torch.tanh(offset)
-            # 根据不同 scale 调整 offset
-            offset = (offset * max(L - 1, 1) / max(num_focus - 1, 1))
-            # -----------------------------------------------------
-            # Sampling locations
-            # [B,H,N,P]
-            # -----------------------------------------------------
-            sampling_locations = (reference.unsqueeze(-1) + offset)
-            # -----------------------------------------------------
-            # 当前 level 的 value
-            # [B,L,D]→[B,H,L,D_head]
-            # -----------------------------------------------------
-            value_level = feature.view(B, L, self.num_heads, self.head_dim)
-            value_level = value_level.permute(0, 2, 1, 3).contiguous()
-            # -----------------------------------------------------
-            # Deformable sampling
-            # [B,H,N,P,D]
-            # -----------------------------------------------------
-            sampled = self._sample_1d( value_level, sampling_locations)
-            # -----------------------------------------------------
-            # Attention weight
-            # [B,H,N,P]
-            # -----------------------------------------------------
-            weight = attention[:, :, :, level, :]
-            weight = weight.unsqueeze(-1)
-            # -----------------------------------------------------
-            # Weighted aggregation
-            # [B,H,N,P,D]→[B,H,N,D]
-            # -----------------------------------------------------
+    def forward(self, query, pyramid, reference_points):
+        B, N, D = query.shape
+        if len(pyramid) != self.num_levels:
+            raise ValueError(f"Expected {self.num_levels} feature levels, got {len(pyramid)}")
+        offsets = self.sampling_offsets(query)
+        offsets = offsets.view(B, N, self.num_heads, self.num_levels, self.num_points, 3).permute(0, 2, 1, 3, 4, 5).contiguous()
+        weights = self.attention_weights(query)
+        weights = weights.view(B, N, self.num_heads, self.num_levels * self.num_points).permute(0, 2, 1, 3).contiguous()
+        weights = torch.softmax(weights, dim=-1)
+        weights = weights.view(B, self.num_heads, N, self.num_levels, self.num_points)
+        ref = reference_points.to(dtype=query.dtype, device=query.device)
+        ref = ref.view(1, 1, N, 1, 3)
+        output = query.new_zeros(B, self.num_heads, N, self.head_dim)
+        for level, feature in enumerate(pyramid):
+            # feature: [B,D,F,H,W]
+            value = self.value_proj[level](feature)
+            _, _, Fz, Hy, Wx = value.shape
+            value = value.view(B, self.num_heads, self.head_dim, Fz, Hy, Wx)
+            scale = query.new_tensor([
+                1.0 / max(Fz, 1),
+                1.0 / max(Hy, 1),
+                1.0 / max(Wx, 1),
+            ])
+            level_offset = torch.tanh(offsets[:, :, :, level]) * (2.0 * scale)
+            locations = (ref + level_offset).clamp(0.0, 1.0)
+            sampled = self._sample_level(value, locations)
+            weight = weights[:, :, :, level].unsqueeze(-1)
             output = output + (sampled * weight).sum(dim=3)
-        # ---------------------------------------------------------
-        # Merge heads
-        # [B,H,N,D_head]→[B,N,D]
-        # ---------------------------------------------------------
-        output = output.permute(0, 2, 1, 3).contiguous()
-        output = output.view(B, num_focus, D)
-        # --------------------------------------------------------
-        # Output projection
-        # ---------------------------------------------------------
-        output = self.out_proj(output)
-        output = self.dropout(output)
-        return output
+        output = output.permute(0, 2, 1, 3).contiguous().view(B, N, D)
+        return self.dropout(self.output_proj(output))
 
-class MultiScaleFocusDeformableAttentionBlock(nn.Module):
-    """
-    Multi-Scale Deformable Focus Attention Block
-    """
-    def __init__(self, feature_dim=512, num_heads=8, num_levels=3, num_points=4, dropout=0.2):
+class Deformable3DBlock(nn.Module):
+    def __init__(self, feature_dim=256, num_heads=8, num_levels=3, num_points=4, dropout=0.2):
         super().__init__()
-        self.norm = nn.LayerNorm(feature_dim)
-        self.attn = MultiScaleFocusDeformableAttention(feature_dim=feature_dim, num_heads=num_heads, num_levels=num_levels, num_points=num_points, dropout=dropout)
-        self.ffn_norm = nn.LayerNorm(feature_dim)
+        self.norm1 = nn.LayerNorm(feature_dim)
+        self.attn = MultiScaleDeformableAttention3D(feature_dim=feature_dim, num_heads=num_heads, num_levels=num_levels, num_points=num_points, dropout=dropout)
+        self.norm2 = nn.LayerNorm(feature_dim)
         self.ffn = nn.Sequential(
             nn.Linear(feature_dim, feature_dim * 4),
             nn.GELU(),
@@ -284,97 +91,84 @@ class MultiScaleFocusDeformableAttentionBlock(nn.Module):
             nn.Linear(feature_dim * 4, feature_dim),
             nn.Dropout(dropout)
         )
-        # LayerScale
         self.gamma1 = nn.Parameter(torch.ones(feature_dim))
         self.gamma2 = nn.Parameter(torch.ones(feature_dim))
-    def forward(self, x):
-        # ---------------------------------------------------------
-        # Deformable Attention
-        # ---------------------------------------------------------
-        attn_out = self.attn(self.norm(x))
-        x = x + self.gamma1 * attn_out
-        # ---------------------------------------------------------
-        # FFN
-        # ---------------------------------------------------------
-        ffn_out = self.ffn(self.ffn_norm(x))
-        x = x + self.gamma2 * ffn_out
-        return x
 
-class MultiScaleFocusDeformableAttentionEncoder(nn.Module):
-    """
-    Stack multiple deformable attention blocks.
-    """
-    def __init__(self, depth=4, feature_dim=512, num_heads=8, num_levels=3, num_points=4, dropout=0.2):
-        super().__init__()
-        self.layers = nn.ModuleList([MultiScaleFocusDeformableAttentionBlock(feature_dim=feature_dim,  num_heads=num_heads,  num_levels=num_levels,  num_points=num_points,  dropout=dropout) for _ in range(depth)])
-
-    def forward(self, x):
-        for layer in self.layers:
-            x = layer(x)
-        return x
+    def forward(self, query, pyramid, reference_points):
+        query = query + self.gamma1 * self.attn(self.norm1(query), pyramid, reference_points)
+        query = query + self.gamma2 * self.ffn(self.norm2(query))
+        return query
 
 class MSFDAttention(nn.Module):
     """
-    Multi-Scale Deformable Focus Attention
     Input:
-        [B,7,512]
+        query_tokens: [B, 448, 256]
+        pyramid: [p2, p3, p4], each [B,256,7,H,W]
     Output:
-        fused:
-            [B,512]
-        weight:
-            [B,7]
+        fused: [B,256]
+        focus_weight: [B,7]
     """
-    def __init__(self, feature_dim=512, num_heads=8, depth=4, num_levels=3, num_points=4, dropout=0.2):
+    def __init__(self, feature_dim=256, num_heads=8, depth=2, num_levels=3, num_points=4, dropout=0.2):
         super().__init__()
-        # ---------------------------------------------------------
-        # 七个焦平面的可学习位置编码
-        # ---------------------------------------------------------
-        self.focus_embedding = nn.Parameter(torch.randn(7, feature_dim))
-        # ---------------------------------------------------------
-        # Deformable Attention Encoder
-        # ---------------------------------------------------------
-        self.encoder = MultiScaleFocusDeformableAttentionEncoder(depth=depth, feature_dim=feature_dim, num_heads=num_heads, num_levels=num_levels, num_points=num_points, dropout=dropout)
+        self.feature_dim = feature_dim
+        self.num_heads = num_heads
+        self.depth = depth
+        self.num_focus = 7
+        self.query_h = 8
+        self.query_w = 8
+        self.focus_embedding = nn.Parameter(torch.zeros(self.num_focus, feature_dim))
+        self.encoder = nn.ModuleList([
+            Deformable3DBlock(
+                feature_dim=feature_dim,
+                num_heads=num_heads,
+                num_levels=num_levels,
+                num_points=num_points,
+                dropout=dropout
+            )
+            for _ in range(depth)
+        ])
         self.final_norm = nn.LayerNorm(feature_dim)
-        # ---------------------------------------------------------
-        # Focus importance score
-        # ---------------------------------------------------------
         self.score = nn.Linear(feature_dim, 1)
+        reference_points = self._build_reference_points()
+        self.register_buffer("reference_points", reference_points, persistent=False)
+        nn.init.trunc_normal_(self.focus_embedding, std=0.02)
 
-    def forward(self, x):
-        """
-        x:
-            [B,7,512]
-        """
-        # ---------------------------------------------------------
-        # 添加焦平面位置编码
-        # ---------------------------------------------------------
-        x = (x + self.focus_embedding.unsqueeze(0))
-        # ---------------------------------------------------------
-        # Multi-scale deformable attention
-        # --------------------------------------------------------
-        x = self.encoder(x)
-        # ---------------------------------------------------------
-        # Final normalization
-        # ---------------------------------------------------------
+    def _build_reference_points(self):
+        points = []
+        for f in range(self.num_focus):
+            z = (f + 0.5) / self.num_focus
+            for y in range(self.query_h):
+                yy = (y + 0.5) / self.query_h
+                for x in range(self.query_w):
+                    xx = (x + 0.5) / self.query_w
+                    points.append((z, yy, xx))
+        return torch.tensor(points, dtype=torch.float32)
+
+    def forward(self, query_tokens, pyramid):
+        if query_tokens.ndim != 3:
+            raise ValueError(f"Expected query_tokens [B,N,D], got {tuple(query_tokens.shape)}")
+        B, N, D = query_tokens.shape
+        expected_n = self.num_focus * self.query_h * self.query_w
+        if N != expected_n:
+            raise ValueError(f"Expected {expected_n} query tokens, got {N}")
+        x = query_tokens + self.focus_embedding.repeat_interleave(self.query_h * self.query_w, dim=0).unsqueeze(0)
+        for block in self.encoder:
+            x = block(x, pyramid, self.reference_points)
         x = self.final_norm(x)
-        # ---------------------------------------------------------
-        # 每个焦平面的重要性
-        # ---------------------------------------------------------
-        score = self.score(x).squeeze(-1)
+        x_focus = x.view(B, self.num_focus, self.query_h * self.query_w, D).mean(dim=2)
+        score = self.score(x_focus).squeeze(-1)
         weight = torch.softmax(score, dim=1)
-        # ---------------------------------------------------------
-        # Focus fusion
-        # ---------------------------------------------------------
-        fused = torch.sum(x * weight.unsqueeze(-1), dim=1)
+        fused = torch.sum(x_focus * weight.unsqueeze(-1), dim=1)
         return fused, weight
 
 if __name__ == "__main__":
-    model = MSFDAttention(feature_dim=512, num_heads=8, depth=6, num_levels=3, num_points=4, dropout=0.2)
-    x = torch.randn(8, 7, 512)
-    feature, weight = model(x)
-    print("Input:", x.shape)
-    print("Feature:", feature.shape)
-    print("Weight:", weight.shape)
-    print("Weight sum:", weight.sum(dim=1))
-    num_params = sum(p.numel() for p in model.parameters())
-    print(f"Parameters: {num_params / 1e6:.3f} M")
+    model = MSFDAttention()
+    x = torch.randn(2, 7 * 8 * 8, 256)
+    pyramid = [
+        torch.randn(2, 256, 7, 63, 63),
+        torch.randn(2, 256, 7, 32, 32),
+        torch.randn(2, 256, 7, 16, 16),
+    ]
+    with torch.no_grad():
+        y, w = model(x, pyramid)
+    print(y.shape, w.shape, w.sum(dim=1))

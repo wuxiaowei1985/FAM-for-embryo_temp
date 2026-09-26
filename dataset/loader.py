@@ -19,40 +19,49 @@ g.manual_seed(cfg.SEED)
 
 train_embryos, val_embryos, test_embryos = split_embryos(cfg.DATA_ROOT, seed=cfg.SEED)
 
-train_dataset = EmbryoDataset(root=cfg.DATA_ROOT,
-                              transform=FocusTransform(),
-                              embryo_list=train_embryos
-                              )
-val_dataset = EmbryoDataset(root=cfg.DATA_ROOT,
-                            transform=FocusValTransform(),
-                            embryo_list=val_embryos
-                            )
-test_dataset = EmbryoDataset(root=cfg.DATA_ROOT,
-                             transform=FocusValTransform(),
-                             embryo_list=test_embryos
-                             )
+train_dataset = EmbryoDataset(
+    root=cfg.DATA_ROOT,
+    transform=FocusTransform(num_views=cfg.NUM_AUG_VIEWS),
+    embryo_list=train_embryos
+)
+val_dataset = EmbryoDataset(
+    root=cfg.DATA_ROOT,
+    transform=FocusValTransform(),
+    embryo_list=val_embryos
+)
+test_dataset = EmbryoDataset(
+    root=cfg.DATA_ROOT,
+    transform=FocusValTransform(),
+    embryo_list=test_embryos
+)
 
-train_loader = DataLoader(train_dataset,
-                          batch_size=cfg.BATCH_SIZE,
-                          shuffle=True,
-                          num_workers=cfg.NUM_WORKERS,
-                          collate_fn=embryo_collate_fn,
-                          generator=g,
-                          worker_init_fn=seed_worker
-                          )
-val_loader = DataLoader(val_dataset,
-                        batch_size=cfg.BATCH_SIZE,
-                        shuffle=False,
-                        num_workers=cfg.NUM_WORKERS,
-                        collate_fn=embryo_collate_fn,
-                        generator=g,
-                        worker_init_fn=seed_worker
-                        )
-test_loader = DataLoader(test_dataset,
-                         batch_size=cfg.BATCH_SIZE,
-                         shuffle=False,
-                         num_workers=cfg.NUM_WORKERS,
-                         collate_fn=embryo_collate_fn,
-                         generator=g,
-                         worker_init_fn=seed_worker
-                         )
+train_loader = DataLoader(
+    train_dataset,
+    batch_size=cfg.BATCH_SIZE,
+    shuffle=True,
+    num_workers=cfg.NUM_WORKERS,
+    collate_fn=embryo_collate_fn,
+    generator=g,
+    worker_init_fn=seed_worker,
+    pin_memory=torch.cuda.is_available()
+)
+val_loader = DataLoader(
+    val_dataset,
+    batch_size=cfg.BATCH_SIZE,
+    shuffle=False,
+    num_workers=cfg.NUM_WORKERS,
+    collate_fn=embryo_collate_fn,
+    generator=g,
+    worker_init_fn=seed_worker,
+    pin_memory=torch.cuda.is_available()
+)
+test_loader = DataLoader(
+    test_dataset,
+    batch_size=cfg.BATCH_SIZE,
+    shuffle=False,
+    num_workers=cfg.NUM_WORKERS,
+    collate_fn=embryo_collate_fn,
+    generator=g,
+    worker_init_fn=seed_worker,
+    pin_memory=torch.cuda.is_available()
+)

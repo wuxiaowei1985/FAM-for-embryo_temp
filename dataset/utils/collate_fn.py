@@ -1,18 +1,21 @@
 import torch
 
 def embryo_collate_fn(batch):
-    images = torch.stack([sample["images"] for sample in batch], dim=0)
-    embryos = [sample["embryo"] for sample in batch]
-    image_names = [sample["image_name"] for sample in batch]
-    output = {
+    images = torch.cat([sample["images"] for sample in batch], dim=0)
+    views_per_sample = batch[0]["images"].shape[0]
+    embryos = []
+    image_names = []
+    runs = []
+    labels = []
+    for sample in batch:
+        embryos.extend([sample["embryo"]] * views_per_sample)
+        image_names.extend([sample["image_name"]] * views_per_sample)
+        runs.extend([sample["run"]] * views_per_sample)
+        labels.extend([sample["label"]] * views_per_sample)
+    return {
         "images": images,
         "embryo": embryos,
-        "image_name": image_names
+        "image_name": image_names,
+        "run": torch.tensor(runs, dtype=torch.long),
+        "label": torch.tensor(labels, dtype=torch.long)
     }
-    # 如果以后Dataset增加label
-    if "label" in batch[0]:
-        output["label"] = torch.tensor([sample["label"] for sample in batch] ,dtype=torch.long)
-    # 如果以后增加run编号
-    if "run" in batch[0]:
-        output["run"] = torch.tensor([sample["run"] for sample in batch], dtype=torch.long)
-    return output
