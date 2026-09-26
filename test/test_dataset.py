@@ -1,10 +1,10 @@
 import matplotlib.pyplot as plt
 from dataset.embryo_dataset import EmbryoDataset
 from dataset.utils.transforms import FocusTransform
-
+from configs import config as cfg
 
 def test_dataset():
-    dataset = EmbryoDataset(root=r"I:\datasets\胚胎\南特704", transform=FocusTransform())
+    dataset = EmbryoDataset(root=cfg.DATA_ROOT, transform=FocusTransform())
     print(len(dataset))
     sample = dataset[0]
     print(sample["embryo"])

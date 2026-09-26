@@ -45,15 +45,16 @@
     model/
     test/
     trainer/
-    weights/
+    utils/
     train.py
+    test.py
 ```
 
 ### dataset结构
 
 ```bash
 {
-	"images": imgs				//[7x1x224x224]-[FxCxHxW]
+	"images": imgs				//[7x1x500x500]-[FxCxHxW]
     "embryo": embryo_name,		//ep.AA83-7
     "image_name": img.name,		//ep.D2013.01.28_S0717_I132_WELL7_RUN10.jpeg
     "run": run_id,				//ep.10
@@ -75,7 +76,7 @@
     "t6": 7,
     "t7": 8, 
     "t8": 9, 
-    "t9": 10, 
+    "t9+": 10, 
     "tM": 11, 
     "tSB": 12,
     "tB": 13, 

@@ -1,5 +1,7 @@
 from dataset.annotation_reader import AnnotationLoader
-annotation_root = r"I:\datasets\胚胎\南特704\embryo_dataset_annotations"
+from configs import config as cfg
+
+annotation_root = cfg.DATA_ROOT / "embryo_dataset_annotations"
 
 def test_annotation():
     reader = AnnotationLoader(annotation_root)

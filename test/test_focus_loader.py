@@ -1,7 +1,8 @@
 from dataset.utils.focus_loader import FocusLoader
+from configs import config as cfg
 
 def test_focus_loader():
-    loader = FocusLoader(r"I:\datasets\胚胎\南特704")
+    loader = FocusLoader(cfg.DATA_ROOT)
     imgs = loader.load_focus_images(
         "AA83-7",
         "D2013.01.28_S0717_I132_WELL7_RUN88.jpeg"
