@@ -4,11 +4,7 @@ import torchvision.transforms.functional as TF
 from torchvision.transforms import InterpolationMode
 
 class FocusTransform:
-    """
-    Output:
-        [num_views, 7, 1, 500, 500]
-    """
-    def __init__(self, image_size=500, num_views=2, rotation=10.0, translate=0.03, scale_range=(0.97, 1.03), brightness_range=(0.90, 1.10), contrast_range=(0.90, 1.10), noise_std=0.01):
+    def __init__( self, image_size=500, num_views=2, rotation=10.0, translate=0.03, scale_range=(0.97, 1.03), brightness_range=(0.90, 1.10), contrast_range=(0.90, 1.10), noise_std=0.01):
         if image_size != 500:
             raise ValueError("Native-resolution training requires image_size=500.")
         if num_views < 1:
@@ -28,8 +24,8 @@ class FocusTransform:
         max_dy = int(height * self.translate)
         translate = (random.randint(-max_dx, max_dx), random.randint(-max_dy, max_dy))
         scale = random.uniform(*self.scale_range)
-        hflip = random.random() < 0.5
-        vflip = random.random() < 0.5
+        hflip = (random.random() < 0.5)
+        vflip = (random.random() < 0.5)
         brightness = random.uniform(*self.brightness_range)
         contrast = random.uniform(*self.contrast_range)
         return angle, translate, scale, hflip, vflip, brightness, contrast
@@ -38,16 +34,22 @@ class FocusTransform:
         angle, translate, scale, hflip, vflip, brightness, contrast = params
         output = []
         for img in images:
+            # -------------------------------------------------
+            # 几何增强必须在七个焦平面之间共享
+            # -------------------------------------------------
             if hflip:
                 img = TF.hflip(img)
             if vflip:
                 img = TF.vflip(img)
             img = TF.affine(img, angle=angle, translate=translate, scale=scale, shear=[0.0, 0.0], interpolation=InterpolationMode.BILINEAR, fill=0)
+            # -------------------------------------------------
+            # 强度增强也保持 stack-level 一致
+            # -------------------------------------------------
             img = TF.adjust_brightness(img, brightness)
             img = TF.adjust_contrast(img, contrast)
             tensor = TF.to_tensor(img)
             if self.noise_std > 0:
-                tensor = tensor + torch.randn_like(tensor) * self.noise_std
+                tensor = (tensor + torch.randn_like(tensor) * self.noise_std)
             tensor = tensor.clamp(0.0, 1.0)
             tensor = TF.normalize(tensor, mean=[0.5], std=[0.5])
             output.append(tensor)
@@ -58,7 +60,7 @@ class FocusTransform:
             raise ValueError(f"Expected 7 focal planes, got {len(images)}")
         width, height = images[0].size
         if (width, height) != (500, 500):
-            raise ValueError(f"Expected native 500x500 images, got {width}x{height}")
+            raise ValueError(f"Expected native 500x500 images, "f"got {(width, height)}")
         views = []
         for _ in range(self.num_views):
             params = self._sample_params(width, height)
@@ -81,4 +83,5 @@ class FocusValTransform:
             tensor = TF.to_tensor(img)
             tensor = TF.normalize(tensor, mean=[0.5], std=[0.5])
             output.append(tensor)
+        # [1,7,1,500,500]
         return torch.stack(output, dim=0).unsqueeze(0)

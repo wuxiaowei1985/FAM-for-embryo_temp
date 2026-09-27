@@ -4,7 +4,7 @@ import torch
 # 训练
 SEED = 42
 NUM_AUG_VIEWS = 2
-BATCH_SIZE = 32
+BATCH_SIZE = 16
 EPOCHS = 50
 LR = 1e-4           # 注意力/分类头用正常学习率
 MIN_LR = 1e-7

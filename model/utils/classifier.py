@@ -27,3 +27,5 @@ if __name__ == "__main__":
     x = torch.randn(4,512)
     y = head(x)
     print(y.shape)
+    num_params = sum(p.numel() for p in head.parameters())
+    print(f"Parameters: {num_params / 1e6:.3f} M")

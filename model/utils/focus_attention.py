@@ -2,14 +2,11 @@ import torch
 import torch.nn as nn
 
 class FocusAttentionBlock(nn.Module):
-    # 一个 Focus Transformer Encoder Block
     def __init__(self, feature_dim=512, num_heads=8, dropout=0.2):
         super().__init__()
         self.norm1 = nn.LayerNorm(feature_dim)
-        self.gamma1 = nn.Parameter(torch.ones(feature_dim))
         self.attn = nn.MultiheadAttention(embed_dim=feature_dim, num_heads=num_heads, dropout=dropout, batch_first=True)
         self.norm2 = nn.LayerNorm(feature_dim)
-        self.gamma2 = nn.Parameter(torch.ones(feature_dim))
         self.ffn = nn.Sequential(
             nn.Linear(feature_dim, feature_dim * 4),
             nn.GELU(),
@@ -20,85 +17,75 @@ class FocusAttentionBlock(nn.Module):
 
     def forward(self, x):
         identity = x
-        x = self.norm1(x)
-        attn_out, _ = self.attn( x, x, x, need_weights=False)
-        x = identity + self.gamma1 * attn_out
+        x_norm = self.norm1(x)
+        attn_out, _ = self.attn( x_norm, x_norm, x_norm, need_weights=False)
+        x = identity + attn_out
         identity = x
-        x = self.norm2(x)
-        x = identity + self.gamma2 * self.ffn(x)
-        return x
-
-class FocusAttentionEncoder(nn.Module):
-    def __init__(self, depth=4, feature_dim=512, num_heads=8, dropout=0.2):
-        super().__init__()
-        self.layers = nn.ModuleList([FocusAttentionBlock(feature_dim=feature_dim, num_heads=num_heads, dropout=dropout) for _ in range(depth)])
-
-    def forward(self, x):
-        for layer in self.layers:
-            x = layer(x)
+        x = identity + self.ffn(self.norm2(x))
         return x
 
 class FocusAttention(nn.Module):
-    def __init__(self, feature_dim=512, num_heads=8, depth=4, dropout=0.2):
+    """
+    Input: [B,L,D]
+    Current: [B,448,512]
+    Output sequence: [B,448,512]
+    Coarse pooled feature: [B,512]
+    """
+    def __init__(self,feature_dim=512, num_heads=8, depth=2, num_focus=7, patches_per_focus=64, dropout=0.2):
         super().__init__()
-        self.focus_embedding = nn.Parameter(torch.randn(7, feature_dim))
-        self.encoder = FocusAttentionEncoder(depth=depth, feature_dim=feature_dim, num_heads=num_heads, dropout=dropout)
+        self.feature_dim = feature_dim
+        self.num_focus = num_focus
+        self.patches_per_focus = patches_per_focus
+        self.num_tokens = (num_focus * patches_per_focus)
+        self.focus_embedding = nn.Parameter(torch.randn(num_focus, feature_dim) * 0.02)
+        self.encoder = nn.ModuleList([
+            FocusAttentionBlock(feature_dim=feature_dim, num_heads=num_heads, dropout=dropout)
+            for _ in range(depth)
+        ])
         self.final_norm = nn.LayerNorm(feature_dim)
         self.score = nn.Linear(feature_dim, 1)
 
+    def _add_focus_embedding(self, x):
+        B, L, D = x.shape
+        if L != self.num_tokens:
+            raise ValueError(f"Expected {self.num_tokens} tokens, "f"got {L}")
+        if D != self.feature_dim:
+            raise ValueError(f"Expected feature dimension "f"{self.feature_dim}, got {D}")
+        focus_ids = torch.arange(self.num_focus, device=x.device).repeat_interleave(self.patches_per_focus)
+        embedding = self.focus_embedding[focus_ids].unsqueeze(0)
+        return x + embedding
+
     def encode(self, x):
-        """
-        只完成 Focus Attention 特征编码，
-        不进行 7 个焦平面的最终融合。
-        Input:
-            x: [B, 7, 512]
-        Output:
-            x: [B, 7, 512]
-        """
-        x = x + self.focus_embedding.unsqueeze(0)
-        x = self.encoder(x)
-        x = self.final_norm(x)
-        return x
+        x = self._add_focus_embedding(x)
+        for layer in self.encoder:
+            x = layer(x)
+        return self.final_norm(x)
 
     def fuse(self, x):
-        """
-        对已经编码后的 7 个焦平面进行融合。
-        Input:
-            x: [B, 7, 512]
-        Output:
-            fused: [B, 512]
-            weight: [B, 7]
-        """
         score = self.score(x).squeeze(-1)
-        weight = torch.softmax(score, dim=1)
-        fused = torch.sum(x * weight.unsqueeze(-1), dim=1)
-        return fused, weight
+        # [B,L]
+        token_weight = torch.softmax(score, dim=1)
+        # [B,D]
+        fused = torch.sum(x * token_weight.unsqueeze(-1), dim=1)
+        # [B,7]
+        focus_weight = token_weight.view(x.size(0), self.num_focus, self.patches_per_focus).sum(dim=-1)
+        return fused, token_weight, focus_weight
 
     def forward(self, x, return_sequence=False):
-        """
-        Input:
-            x: [B, 7, 512]
-        return_sequence=False:
-            fused: [B,512]
-            weight: [B,7]
-        return_sequence=True:
-            sequence: [B,7,512]
-            fused: [B,512]
-            weight: [B,7]
-        """
         sequence = self.encode(x)
-        fused, weight = self.fuse(sequence)
+        fused, token_weight, focus_weight = self.fuse(sequence)
         if return_sequence:
-            return sequence, fused, weight
-        else:
-            return fused, weight
+            return sequence, fused, token_weight, focus_weight
+        return fused, token_weight, focus_weight
 
 if __name__ == "__main__":
     model = FocusAttention(depth=2)
-    x = torch.randn(8, 7, 512)
-    feature, weight = model(x)
-    print(feature.shape)
-    print(weight.shape)
-    print(weight.sum(dim=1))
+    x = torch.randn(2, 7 * 8 * 8, 512)
+    with torch.no_grad():
+        sequence, fused, token_weight, focus_weight = model(x, return_sequence=True)
+    print("sequence:", sequence.shape)
+    print("fused:", fused.shape)
+    print("token_weight:", token_weight.shape)
+    print("focus_weight:", focus_weight.shape)
     num_params = sum(p.numel() for p in model.parameters())
-    print(f"Parameters: {num_params / 1e6:.3f} M")
+    print(f"Parameters: "f"{num_params / 1e6:.3f} M")
