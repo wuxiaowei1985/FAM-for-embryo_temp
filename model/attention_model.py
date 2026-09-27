@@ -40,10 +40,6 @@ class HierarchicalFocusAttentionModel(nn.Module):
     def _select_pyramid(pyramid, mask):
         return [feature[mask] for feature in pyramid]
 
-    @staticmethod
-    def _pool_tokens(tokens):
-        return tokens.mean(dim=1)
-
     def extract_backbone_features(self, images):
         return self.encoder(images)
 
@@ -111,8 +107,7 @@ class HierarchicalFocusAttentionModel(nn.Module):
         if mask_pronuclear.any():
             branch_pyramid = self._select_pyramid(pyramid, mask_pronuclear)
             branch_query = fine_query_tokens[mask_pronuclear]
-            refined_tokens, branch_attention = self.msfd_attention["pronuclear"](branch_query, branch_pyramid, return_attention=True)
-            branch_feature = self._pool_tokens(refined_tokens)
+            branch_feature, branch_attention = self.msfd_attention["pronuclear"](branch_query, branch_pyramid, return_attention=True)
             pronuclear_logits[mask_pronuclear] = self.pronuclear_head(branch_feature)
             pronuclear_attention = branch_attention
         # =====================================================
@@ -122,8 +117,7 @@ class HierarchicalFocusAttentionModel(nn.Module):
         if mask_cleavage.any():
             branch_pyramid = self._select_pyramid(pyramid, mask_cleavage)
             branch_query = fine_query_tokens[mask_cleavage]
-            refined_tokens, branch_attention = self.msfd_attention["cleavage"](branch_query, branch_pyramid, return_attention=True)
-            branch_feature = self._pool_tokens(refined_tokens)
+            branch_feature, branch_attention = self.msfd_attention["cleavage"](branch_query, branch_pyramid, return_attention=True)
             cleavage_logits[mask_cleavage] = self.cleavage_head(branch_feature)
             cleavage_attention = branch_attention
         # =====================================================
@@ -133,8 +127,7 @@ class HierarchicalFocusAttentionModel(nn.Module):
         if mask_blastocyst.any():
             branch_pyramid = self._select_pyramid(pyramid, mask_blastocyst)
             branch_query = fine_query_tokens[mask_blastocyst]
-            refined_tokens, branch_attention = self.msfd_attention["blastocyst"](branch_query, branch_pyramid, return_attention=True)
-            branch_feature = self._pool_tokens(refined_tokens)
+            branch_feature, branch_attention = self.msfd_attention["blastocyst"](branch_query, branch_pyramid, return_attention=True)
             blastocyst_logits[mask_blastocyst] = self.blastocyst_head(branch_feature)
             blastocyst_attention = branch_attention
         if return_dict:

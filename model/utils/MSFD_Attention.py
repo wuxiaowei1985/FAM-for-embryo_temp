@@ -132,8 +132,6 @@ class MSFDAttention(nn.Module):
             p4 [B,512,7,16,16]
     Output:
         refined_tokens: [B,448,512]
-    注意：
-        这里绝对不做 token pooling。
     """
     def __init__(self, feature_dim=512, num_heads=8, depth=2, num_levels=3, num_points=4, num_focus=7, query_h=8, query_w=8, dropout=0.2):
         super().__init__()
@@ -151,6 +149,7 @@ class MSFDAttention(nn.Module):
             for _ in range(depth)
         ])
         self.final_norm = nn.LayerNorm(feature_dim)
+        self.score = nn.Linear(feature_dim, 1)
         self.register_buffer("reference_points", self._build_reference_points(), persistent=False)
 
     def _build_reference_points(self):
@@ -179,9 +178,12 @@ class MSFDAttention(nn.Module):
             if return_attention:
                 attention_maps.append(attention)
         x = self.final_norm(x)
+        score = self.score(x).squeeze(-1)
+        token_weight = torch.softmax(score, dim=1)
+        fused = torch.sum(x * token_weight.unsqueeze(-1), dim=1)
         if return_attention:
-            return x, attention_maps
-        return x, None
+            return fused, attention_maps
+        return fused, None
 
 if __name__ == "__main__":
     model = MSFDAttention(feature_dim=512)
