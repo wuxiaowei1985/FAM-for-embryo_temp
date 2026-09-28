@@ -18,53 +18,20 @@ CLASSES_NUM = len(LABEL_NAMES)
 # final_probs:
 #   [3 + 8 + 5] = 16
 # ============================================================
-def build_routed_final_probs(coarse_pred, pronuclear_logits, cleavage_logits, blastocyst_logits):
-    """
-    根据 coarse prediction 进行 hard routing，构造最终 16 类概率。
-    coarse:
-        0 -> pronuclear: 3 classes
-        1 -> cleavage:   8 classes
-        2 -> blastocyst: 5 classes
-    Output:
-        [B, 16]
-    """
-    pronuclear_probs = torch.softmax(pronuclear_logits, dim=1)
-    cleavage_probs = torch.softmax(cleavage_logits, dim=1)
-    blastocyst_probs = torch.softmax(blastocyst_logits, dim=1)
-    batch_size = coarse_pred.size(0)
-    device = coarse_pred.device
-    final_probs = torch.zeros(batch_size, 16, device=device, dtype=pronuclear_probs.dtype)
-    # ========================================================
-    # Pronuclear
-    # ========================================================
-    mask = coarse_pred == 0
-    if mask.any():
-        final_probs[mask, 0:3] = pronuclear_probs[mask]
-    # ========================================================
-    # Cleavage
-    # ========================================================
-    mask = coarse_pred == 1
-    if mask.any():
-        final_probs[mask, 3:11] = cleavage_probs[mask]
-    # ========================================================
-    # Blastocyst
-    # ========================================================
-    mask = coarse_pred == 2
-    if mask.any():
-        final_probs[mask, 11:16] = blastocyst_probs[mask]
-    # ========================================================
-    # Safety check
-    # ========================================================
-    assert final_probs.shape[1] == 16
-    return final_probs
+# Soft Routing
+# ============================================================
 def get_final_probs(output):
-    coarse_pred = output["coarse_pred"]
-    return build_routed_final_probs(
-        coarse_pred,
-        output["pronuclear_logits"],
-        output["cleavage_logits"],
-        output["blastocyst_logits"]
-    )
+    """
+    使用模型内部的 soft routing 获取最终 16 类概率。
+    final_probs:  [B, 16]
+    P(y | x) = P(coarse | x) * P(y | coarse, x)
+    """
+    final_probs = output["final_probs"]
+    assert final_probs.dim() == 2
+    assert final_probs.size(1) == CLASSES_NUM
+    probability_sum = final_probs.sum(dim=1)
+    assert torch.allclose(probability_sum, torch.ones_like(probability_sum), atol=1e-5)
+    return final_probs
 # ============================================================
 # Main
 # ============================================================

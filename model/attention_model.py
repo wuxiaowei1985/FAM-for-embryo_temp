@@ -36,10 +36,6 @@ class HierarchicalFocusAttentionModel(nn.Module):
         self.cleavage_head = ClassificationHead(512, 256, cleavage, dropout)
         self.blastocyst_head = ClassificationHead(512, 256, blastocyst, dropout)
 
-    @staticmethod
-    def _select_pyramid(pyramid, mask):
-        return [feature[mask] for feature in pyramid]
-
     def extract_backbone_features(self, images):
         return self.encoder(images)
 
@@ -86,50 +82,58 @@ class HierarchicalFocusAttentionModel(nn.Module):
         # Coarse semantic embedding
         # -----------------------------------------------------
         coarse_embedding = self.coarse_embedding(coarse_probs)
-        # [B,448,512]
+        # [B, 448, 512]
         fine_query_tokens = (focus_tokens + coarse_embedding.unsqueeze(1))
         B = images.size(0)
         device = images.device
         dtype = fine_query_tokens.dtype
-        # -----------------------------------------------------
-        # Output containers
-        # -----------------------------------------------------
-        pronuclear_logits = torch.zeros(B, self.pronuclear_head.classifier[-1].out_features, device=device, dtype=dtype)
-        cleavage_logits = torch.zeros(B, self.cleavage_head.classifier[-1].out_features, device=device, dtype=dtype)
-        blastocyst_logits = torch.zeros(B, self.blastocyst_head.classifier[-1].out_features, device=device, dtype=dtype)
-        pronuclear_attention = None
-        cleavage_attention = None
-        blastocyst_attention = None
         # =====================================================
+        # Pronuclear Expert
+        # =====================================================
+        branch_feature, branch_attention = self.msfd_attention["pronuclear"](fine_query_tokens, pyramid, return_attention=True)
+        pronuclear_logits = self.pronuclear_head(branch_feature)
+        pronuclear_attention = branch_attention
+        # =====================================================
+        # Cleavage Expert
+        # =====================================================
+        branch_feature, branch_attention = self.msfd_attention["cleavage"](fine_query_tokens, pyramid, return_attention=True)
+        cleavage_logits = self.cleavage_head(branch_feature)
+        cleavage_attention = branch_attention
+        # =====================================================
+        # Blastocyst Expert
+        # =====================================================
+        branch_feature, branch_attention = self.msfd_attention["blastocyst"](fine_query_tokens, pyramid, return_attention=True)
+        blastocyst_logits = self.blastocyst_head(branch_feature)
+        blastocyst_attention = branch_attention
+        # =====================================================
+        # Soft Routing
+        # P(y | x) = P(coarse | x) * P(y | coarse, x)
+        # [B, 3]  [B, 8] [B, 5] -> [B, 16]
+        # =====================================================
+        pronuclear_probs = torch.softmax(pronuclear_logits, dim=1)
+        cleavage_probs = torch.softmax(cleavage_logits, dim=1)
+        blastocyst_probs = torch.softmax(blastocyst_logits, dim=1)
+        final_probs = torch.zeros(B, 16, device=device, dtype=dtype)
+        # -----------------------------------------------------
         # Pronuclear
-        # =====================================================
-        mask_pronuclear = (coarse_pred == 0)
-        if mask_pronuclear.any():
-            branch_pyramid = self._select_pyramid(pyramid, mask_pronuclear)
-            branch_query = fine_query_tokens[mask_pronuclear]
-            branch_feature, branch_attention = self.msfd_attention["pronuclear"](branch_query, branch_pyramid, return_attention=True)
-            pronuclear_logits[mask_pronuclear] = self.pronuclear_head(branch_feature)
-            pronuclear_attention = branch_attention
-        # =====================================================
+        # 0 ~ 2
+        # -----------------------------------------------------
+        final_probs[:, 0:3] = (coarse_probs[:, 0:1] * pronuclear_probs)
+        # -----------------------------------------------------
         # Cleavage
-        # =====================================================
-        mask_cleavage = (coarse_pred == 1)
-        if mask_cleavage.any():
-            branch_pyramid = self._select_pyramid(pyramid, mask_cleavage)
-            branch_query = fine_query_tokens[mask_cleavage]
-            branch_feature, branch_attention = self.msfd_attention["cleavage"](branch_query, branch_pyramid, return_attention=True)
-            cleavage_logits[mask_cleavage] = self.cleavage_head(branch_feature)
-            cleavage_attention = branch_attention
-        # =====================================================
+        # 3 ~ 10
+        # -----------------------------------------------------
+        final_probs[:, 3:11] = (coarse_probs[:, 1:2] * cleavage_probs)
+        # -----------------------------------------------------
         # Blastocyst
-        # =====================================================
-        mask_blastocyst = (coarse_pred == 2)
-        if mask_blastocyst.any():
-            branch_pyramid = self._select_pyramid(pyramid, mask_blastocyst)
-            branch_query = fine_query_tokens[mask_blastocyst]
-            branch_feature, branch_attention = self.msfd_attention["blastocyst"](branch_query, branch_pyramid, return_attention=True)
-            blastocyst_logits[mask_blastocyst] = self.blastocyst_head(branch_feature)
-            blastocyst_attention = branch_attention
+        # 11 ~ 15
+        # -----------------------------------------------------
+        final_probs[:, 11:16] = (coarse_probs[:, 2:3] * blastocyst_probs)
+        # -----------------------------------------------------
+        # Safety check
+        # 理论上：sum(final_probs) = 1
+        # -----------------------------------------------------
+        assert final_probs.shape == (B, 16)
         if return_dict:
             return {
                 "coarse_logits": coarse_logits,
@@ -138,6 +142,10 @@ class HierarchicalFocusAttentionModel(nn.Module):
                 "pronuclear_logits": pronuclear_logits,
                 "cleavage_logits": cleavage_logits,
                 "blastocyst_logits": blastocyst_logits,
+                "pronuclear_probs": pronuclear_probs,
+                "cleavage_probs": cleavage_probs,
+                "blastocyst_probs": blastocyst_probs,
+                "final_probs": final_probs,
                 "focus_attention": focus_token_weight,
                 "focus_weight": focus_weight,
                 "sequence": fine_query_tokens,

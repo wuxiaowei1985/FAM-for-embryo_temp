@@ -69,24 +69,11 @@ class Trainer:
         return epoch_loss, epoch_acc
     # ========================================================
     # Phase 2
-    # Phase 1 modules:
-    #     Encoder
-    #     Focus Attention
-    #     Coarse Head
-    # 全部冻结。
-    # Routing:
-    #     Phase 1 coarse prediction
-    #              ↓
-    #            argmax
-    #              ↓
-    #     ┌────────┼────────┐
-    #     ↓        ↓        ↓
-    #    PN       CL       BL
-    # 注意：
-    # GT coarse 不参与 branch 选择。GT coarse 只用于判断：predicted coarse == GT coarse
-    # 如果 routing 正确：对对应 Fine Expert 计算 loss
-    # 如果 routing 错误：不计算 Fine loss
-    # 这样避免不同 Fine Head 的 label space 冲突。
+    # Phase 1: Encoder Focus Attention Coarse Head 全部冻结。
+    # Phase 2: 三个 Fine Expert 对所有样本全部计算。
+    #     Fine Loss: 使用 GT coarse 找到对应 expert，但 GT coarse 只用于计算监督 loss，不参与模型 inference routing。
+    #     Final Loss: 使用 Soft Routing 得到最终 16-class probability，直接计算 16-class CE。
+    #     L = L_fine + lambda * L_final
     # ========================================================
     def train_fine_one_epoch(self, loader):
         self.model.train()
@@ -95,58 +82,50 @@ class Trainer:
         # ----------------------------------------------------
         self.set_frozen_modules_eval()
         # ----------------------------------------------------
+        # Final 16-class loss weight
+        # ----------------------------------------------------
+        final_loss_weight = 0.5
+        # ----------------------------------------------------
         # Statistics
         # ----------------------------------------------------
         total_loss = 0.0
+        total_fine_loss = 0.0
+        total_final_loss = 0.0
         # Fine classification accuracy
-        # 只统计 routing 正确的样本
         fine_correct = 0
         fine_total = 0
         # Coarse routing accuracy
         routing_correct = 0
         routing_total = 0
-        # All samples
-        total_samples = 0
+        # Final 16-class accuracy
+        final_correct = 0
+        final_total = 0
         progress = tqdm(loader, desc="Fine Training")
         for batch in progress:
             images = batch["images"].to(self.device)
             labels = batch["label"].to(self.device)
             batch_size = labels.size(0)
-            total_samples += batch_size
             # =================================================
             # 16-class GT
             # =================================================
-            fine_labels = torch.tensor(
-                [get_fine_label(int(label)) for label in labels],
-                dtype=torch.long,
-                device=self.device
-            )
+            fine_labels = torch.tensor([get_fine_label(int(label)) for label in labels], dtype=torch.long, device=self.device)
             # =================================================
             # 3-class GT
-            # 注意：这里仅用于判断 routing 是否正确，不用于选择 branch。
+            # 注意： GT coarse 不参与 routing。
+            # 这里只用于：
+            #     1. Fine Loss
+            #     2. routing accuracy
             # =================================================
-            coarse_labels = torch.tensor(
-                [get_coarse_label(int(label)) for label in labels],
-                dtype=torch.long,
-                device=self.device
-            )
+            coarse_labels = torch.tensor([get_coarse_label(int(label)) for label in labels], dtype=torch.long, device=self.device)
             # =================================================
             # Forward
-            # Model 内部已经执行：Backbone -> Focus Attention -> Coarse Head -> coarse_pred -> hard routing -> selected MSFD -> selected Fine Head
             # =================================================
             self.optimizer.zero_grad()
-            output = self.model(
-                {"images": images, "label": labels},
-                stage="fine",
-                return_dict=True
-            )
+            output = self.model({"images": images, "label": labels}, stage="fine", return_dict=True)
             # =================================================
             # Coarse prediction
             # =================================================
             coarse_pred = output["coarse_pred"]
-            # -------------------------------------------------
-            # Routing accuracy
-            # -------------------------------------------------
             routing_correct_mask = (coarse_pred == coarse_labels)
             routing_correct += (routing_correct_mask.sum().item())
             routing_total += batch_size
@@ -157,152 +136,117 @@ class Trainer:
             cleavage_logits = output["cleavage_logits"]
             blastocyst_logits = output["blastocyst_logits"]
             # =================================================
-            # 重要：只让 routing 正确的样本参与 Fine Loss。branch 仍然由 coarse_pred 决定。
+            # Final 16-class probability
             # =================================================
+            final_probs = output["final_probs"]
+            # =================================================
+            # Fine Loss
+            # 关键：不再使用 coarse_pred。直接根据 GT coarse：
+            # 因此所有样本都会参与 Fine Loss。
+            # =================================================
+            fine_loss_sum = torch.tensor(0.0, device=self.device)
+            fine_sample_count = 0
+            batch_fine_correct = 0
             # -------------------------------------------------
             # Pronuclear
-            # coarse_pred == 0 AND coarse_GT == 0
             # -------------------------------------------------
-            mask_pronuclear = ((coarse_pred == 0) & (coarse_labels == 0))
-            # -------------------------------------------------
-            # Cleavage
-            # coarse_pred == 1 AND coarse_GT == 1
-            # -------------------------------------------------
-            mask_cleavage = ((coarse_pred == 1) & (coarse_labels == 1))
-            # -------------------------------------------------
-            # Blastocyst
-            # coarse_pred == 2 AND coarse_GT == 2
-            # -------------------------------------------------
-            mask_blastocyst = ((coarse_pred == 2) & (coarse_labels == 2))
-            # =================================================
-            # Loss accumulator
-            # =================================================
-            loss_sum = torch.tensor(0.0, device=self.device)
-            valid_sample_count = 0
-            batch_fine_correct = 0
-            # =================================================
-            # Pronuclear branch
-            # =================================================
+            mask_pronuclear = (coarse_labels == 0)
             if mask_pronuclear.any():
                 logits = pronuclear_logits[mask_pronuclear]
-                # get_fine_label() 已经将：
-                # tPB2 → 0
-                # tPNa → 1
-                # tPNf → 2
-                # 映射到了 Pronuclear 的局部 label space。
                 target = fine_labels[mask_pronuclear]
-                # 安全检查
-                assert (target.min().item() >= 0)
-                assert (target.max().item() < logits.size(1))
+                assert target.min().item() >= 0
+                assert target.max().item() < logits.size(1)
                 loss = self.criterion(logits, target)
                 n = mask_pronuclear.sum()
-                loss_sum = (loss_sum + loss * n)
-                valid_sample_count += n.item()
+                fine_loss_sum = (fine_loss_sum + loss * n)
+                fine_sample_count += n.item()
                 pred = logits.argmax(dim=1)
                 batch_fine_correct += (pred == target).sum().item()
-            # =================================================
-            # Cleavage branch
-            # =================================================
+            # -------------------------------------------------
+            # Cleavage
+            # -------------------------------------------------
+            mask_cleavage = (coarse_labels == 1)
             if mask_cleavage.any():
                 logits = cleavage_logits[mask_cleavage]
-                # get_fine_label() 已经将：
-                # t2  → 0
-                # t3  → 1
-                # ...
-                # t9+ → 7
-                # 映射到了 Cleavage 的局部 label space。
                 target = fine_labels[mask_cleavage]
-                # 安全检查
-                assert (target.min().item() >= 0)
-                assert (target.max().item() < logits.size(1))
+                assert target.min().item() >= 0
+                assert target.max().item() < logits.size(1)
                 loss = self.criterion(logits, target)
                 n = mask_cleavage.sum()
-                loss_sum = (loss_sum + loss * n)
-                valid_sample_count += n.item()
+                fine_loss_sum = (fine_loss_sum + loss * n)
+                fine_sample_count += n.item()
                 pred = logits.argmax(dim=1)
                 batch_fine_correct += (pred == target).sum().item()
-            # =================================================
-            # Blastocyst branch
-            # =================================================
+            # -------------------------------------------------
+            # Blastocyst
+            # -------------------------------------------------
+            mask_blastocyst = (coarse_labels == 2)
             if mask_blastocyst.any():
                 logits = blastocyst_logits[mask_blastocyst]
-                # get_fine_label() 已经将：
-                # tM  → 0
-                # tSB → 1
-                # tB  → 2
-                # tEB → 3
-                # tHB → 4
-                # 映射到了 Blastocyst 的局部 label space。
                 target = fine_labels[mask_blastocyst]
-                # 安全检查
-                assert (target.min().item() >= 0)
-                assert (target.max().item() < logits.size(1))
+                assert target.min().item() >= 0
+                assert target.max().item() < logits.size(1)
                 loss = self.criterion(logits, target)
                 n = mask_blastocyst.sum()
-                loss_sum = (loss_sum + loss * n)
-                valid_sample_count += n.item()
+                fine_loss_sum = (fine_loss_sum + loss * n)
+                fine_sample_count += n.item()
                 pred = logits.argmax(dim=1)
                 batch_fine_correct += (pred == target).sum().item()
             # =================================================
-            # 如果当前 batch 没有正确 routing 的样本，则没有 Fine Loss。不能：loss.backward()，因为此时 loss 与任何 trainable parameter，没有有效的计算图连接。
+            # Fine Loss
             # =================================================
-            if valid_sample_count == 0:
-                progress.set_postfix(
-                    loss="skip",
-                    route_acc= f"{routing_correct / routing_total:.4f}",
-                    fine_acc= f"{fine_correct / max(fine_total, 1):.4f}",
-                    valid=0
-                )
-                continue
+            if fine_sample_count == 0:
+                raise RuntimeError("Fine Loss has no valid samples. ""Please check coarse/fine label mapping.")
+            fine_loss = (fine_loss_sum / fine_sample_count)
             # =================================================
-            # 当前 batch Fine Loss，不同 branch 的样本数量可能不同，所以按照有效样本数量进行加权平均。
+            # Final 16-class Loss
             # =================================================
-            loss = (loss_sum / valid_sample_count)
+            selected_probs = final_probs[torch.arange(batch_size, device=self.device), labels]
+            final_loss = -torch.log(selected_probs.clamp_min(1e-8)).mean()
             # =================================================
-            # Backward 只有 Phase 2 模块会更新：
-            # CoarseEmbedding
-            # PN-MSFD
-            # CL-MSFD
-            # BL-MSFD
-            # PN Head
-            # CL Head
-            # BL Head
+            # Total Loss
+            # =================================================
+            loss = (fine_loss + final_loss_weight * final_loss)
+            # =================================================
+            # Backward
             # =================================================
             loss.backward()
             self.optimizer.step()
             # =================================================
             # Statistics
             # =================================================
-            total_loss += (loss.item() * valid_sample_count)
+            # Fine
+            total_fine_loss += (fine_loss.item() * fine_sample_count)
             fine_correct += batch_fine_correct
-            fine_total += valid_sample_count
+            fine_total += fine_sample_count
+            # Final 16-class
+            final_pred = final_probs.argmax(dim=1)
+            batch_final_correct = (final_pred == labels).sum().item()
+            final_correct += batch_final_correct
+            final_total += batch_size
+            total_final_loss += (final_loss.item() * batch_size)
+            # Total
+            total_loss += (loss.item() * batch_size)
             # =================================================
             # Progress
             # =================================================
             route_acc = (routing_correct / max(routing_total, 1))
             fine_acc = (fine_correct / max(fine_total, 1))
+            final_acc = (final_correct / max(final_total, 1))
             progress.set_postfix(
                 loss=f"{loss.item():.4f}",
+                fine_loss=f"{fine_loss.item():.4f}",
+                final_loss=f"{final_loss.item():.4f}",
                 route_acc=f"{route_acc:.4f}",
                 fine_acc=f"{fine_acc:.4f}",
-                valid=valid_sample_count,
-                pn=int(mask_pronuclear.sum()),
-                cl=int(mask_cleavage.sum()),
-                bl=int(mask_blastocyst.sum()),
+                final_acc=f"{final_acc:.4f}"
             )
         # ====================================================
         # Epoch statistics
         # ====================================================
-        # Fine loss：只对 routing 正确的样本统计。
-        epoch_loss = (total_loss / max(fine_total, 1))
-        # Conditional Fine Accuracy：在 routing 正确的样本中，Fine Expert 的分类准确率。
-        epoch_fine_acc = (fine_correct / max(fine_total, 1))
-        # Coarse routing accuracy：所有样本中 coarse prediction 正确的比例。
-        epoch_routing_acc = (routing_correct / max(routing_total, 1))
-        print(f"\nPhase 2 Routing Accuracy : " f"{epoch_routing_acc * 100:.2f}%")
-        print(f"Phase 2 Conditional Fine Accuracy : " f"{epoch_fine_acc * 100:.2f}%")
-        print(f"Phase 2 Fine-valid Samples : " f"{fine_total}/{total_samples}")
-        return epoch_loss, epoch_fine_acc
+        epoch_loss = (total_loss / max(final_total, 1))
+        epoch_final_acc = (final_correct / max(final_total, 1))
+        return  epoch_loss, epoch_final_acc
     # ========================================================
     # 统一接口
     # ========================================================
