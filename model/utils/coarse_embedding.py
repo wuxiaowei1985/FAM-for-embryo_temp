@@ -22,3 +22,8 @@ class CoarseEmbedding(nn.Module):
         embedding = self.proj(embedding)
         embedding = self.norm(embedding)
         return embedding
+
+if __name__ == "__main__":
+    model = CoarseEmbedding(feature_dim=512)
+    num_params = sum(p.numel() for p in model.parameters())
+    print(f"Parameters: {num_params / 1e6:.3f} M")

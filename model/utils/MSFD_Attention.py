@@ -131,7 +131,7 @@ class MSFDAttention(nn.Module):
             p3 [B,512,7,32,32]
             p4 [B,512,7,16,16]
     Output:
-        refined_tokens: [B,448,512]
+        fused_feature: [B,512]
     """
     def __init__(self, feature_dim=512, num_heads=8, depth=2, num_levels=3, num_points=4, num_focus=7, query_h=8, query_w=8, dropout=0.2):
         super().__init__()
