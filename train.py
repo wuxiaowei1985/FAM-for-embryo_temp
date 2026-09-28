@@ -207,14 +207,14 @@ def train_phase2(model):
     # --------------------------------------------------------
     for epoch in range(cfg.EPOCHS):
         print("\n" + "=" * 60)
-        print(f"Phase 2 | Epoch " f"{epoch + 1}/" f"{cfg.EPOCHS}")
+        print(f"Phase 2 | Epoch "f"{epoch + 1}/"f"{cfg.EPOCHS}")
         # ----------------------------------------------------
         # train
         # ----------------------------------------------------
-        train_loss, train_acc = trainer.train_one_epoch(train_loader)
+        train_loss, train_coarse_acc, train_fine_acc, train_final_acc = trainer.train_one_epoch(train_loader)
         # ----------------------------------------------------
         # validation
-        # 注意：这里的 val_acc 是最终16分类 accuracy
+        # val_acc 是最终16分类 accuracy
         # ----------------------------------------------------
         val_loss, val_acc = validator.validate(val_loader)
         # ----------------------------------------------------
@@ -223,27 +223,35 @@ def train_phase2(model):
         scheduler.step(val_loss)
         # ----------------------------------------------------
         # early stopping
+        # Phase 2 最终任务： 16-class validation accuracy
         # ----------------------------------------------------
         stop = early_stopping(val_acc=val_acc, model=model, optimizer=optimizer, scheduler=scheduler, epoch=epoch)
         # ----------------------------------------------------
         # log
         # ----------------------------------------------------
         lr = optimizer.param_groups[0]["lr"]
-        print(f"Train Loss : " f"{train_loss:.4f}")
-        print(f"Train Conditional Fine Acc : " f"{train_acc:.4f}")
-        print(f"Val Loss   : " f"{val_loss:.4f}")
-        print(f"Val 16-class Acc : " f"{val_acc:.4f}")
-        print(f"LR         : " f"{lr:.8f}")
+        print(f"Train Loss           : "f"{train_loss:.4f}")
+        print(f"Train Coarse Acc     : "f"{train_coarse_acc:.4f}")
+        print(f"Train Conditional Fine Acc  : "f"{train_fine_acc:.4f}")
+        print(f"Train 16-class Acc   : "f"{train_final_acc:.4f}")
+        print(f"Val Loss             : "f"{val_loss:.4f}")
+        print(f"Val 16-class Acc     : "f"{val_acc:.4f}")
+        print(f"LR                   : "f"{lr:.8f}")
+        # ----------------------------------------------------
+        # history
+        # ----------------------------------------------------
         history.update(
             epoch=epoch + 1,
             train_loss=train_loss,
+            train_coarse_acc=train_coarse_acc,
+            train_fine_acc=train_fine_acc,
+            train_final_acc=train_final_acc,
             val_loss=val_loss,
-            train_acc=train_acc,
             val_acc=val_acc,
             lr=lr
         )
         # ----------------------------------------------------
-        # early stopping
+        # early stop
         # ----------------------------------------------------
         if stop:
             print("\n" + "=" * 60)

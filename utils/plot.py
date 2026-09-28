@@ -16,7 +16,7 @@ def plot_training_curve(csv_path, save_dir):
     plt.close()
     # Accuracy
     plt.figure(figsize=(8, 5))
-    plt.plot(history["epoch"], history["train_acc"], label="Train Accuracy", linewidth=2)
+    plt.plot(history["epoch"], history["train_final_acc"], label="Train Accuracy", linewidth=2)
     plt.plot(history["epoch"], history["val_acc"], label="Validation Accuracy", linewidth=2)
     plt.xlabel("Epoch")
     plt.ylabel("Accuracy (%)")

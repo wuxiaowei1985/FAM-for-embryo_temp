@@ -91,7 +91,7 @@ class Trainer:
         total_loss = 0.0
         total_fine_loss = 0.0
         total_final_loss = 0.0
-        # Fine classification accuracy
+        # Conditional Fine classification accuracy
         fine_correct = 0
         fine_total = 0
         # Coarse routing accuracy
@@ -111,10 +111,11 @@ class Trainer:
             fine_labels = torch.tensor([get_fine_label(int(label)) for label in labels], dtype=torch.long, device=self.device)
             # =================================================
             # 3-class GT
-            # 注意： GT coarse 不参与 routing。
+            # 注意：
+            # GT coarse 不参与模型 inference routing。
             # 这里只用于：
-            #     1. Fine Loss
-            #     2. routing accuracy
+            #   1. Fine Loss
+            #   2. routing accuracy
             # =================================================
             coarse_labels = torch.tensor([get_coarse_label(int(label)) for label in labels], dtype=torch.long, device=self.device)
             # =================================================
@@ -136,13 +137,12 @@ class Trainer:
             cleavage_logits = output["cleavage_logits"]
             blastocyst_logits = output["blastocyst_logits"]
             # =================================================
-            # Final 16-class probability
+            # Final 16-class log probability
             # =================================================
-            final_probs = output["final_probs"]
+            final_log_probs = output["final_log_probs"]
             # =================================================
             # Fine Loss
-            # 关键：不再使用 coarse_pred。直接根据 GT coarse：
-            # 因此所有样本都会参与 Fine Loss。
+            # 关键：不再使用 coarse_pred。 直接根据 GT coarse 找到对应 expert，因此所有样本都会参与 Fine Loss。
             # =================================================
             fine_loss_sum = torch.tensor(0.0, device=self.device)
             fine_sample_count = 0
@@ -200,11 +200,13 @@ class Trainer:
             fine_loss = (fine_loss_sum / fine_sample_count)
             # =================================================
             # Final 16-class Loss
+            # 直接在 log probability 空间计算： L_final = -log P(y | x) 不再： probability -> clamp -> log
             # =================================================
-            selected_probs = final_probs[torch.arange(batch_size, device=self.device), labels]
-            final_loss = -torch.log(selected_probs.clamp_min(1e-8)).mean()
+            target_log_probs = final_log_probs[torch.arange(batch_size, device=self.device), labels]
+            final_loss = -target_log_probs.mean()
             # =================================================
             # Total Loss
+            # L = L_fine + lambda * L_final
             # =================================================
             loss = (fine_loss + final_loss_weight * final_loss)
             # =================================================
@@ -220,12 +222,11 @@ class Trainer:
             fine_correct += batch_fine_correct
             fine_total += fine_sample_count
             # Final 16-class
-            final_pred = final_probs.argmax(dim=1)
+            final_pred = final_log_probs.argmax(dim=1)
             batch_final_correct = (final_pred == labels).sum().item()
             final_correct += batch_final_correct
             final_total += batch_size
             total_final_loss += (final_loss.item() * batch_size)
-            # Total
             total_loss += (loss.item() * batch_size)
             # =================================================
             # Progress
@@ -237,7 +238,7 @@ class Trainer:
                 loss=f"{loss.item():.4f}",
                 fine_loss=f"{fine_loss.item():.4f}",
                 final_loss=f"{final_loss.item():.4f}",
-                route_acc=f"{route_acc:.4f}",
+                coarse_acc=f"{route_acc:.4f}",
                 fine_acc=f"{fine_acc:.4f}",
                 final_acc=f"{final_acc:.4f}"
             )
@@ -245,8 +246,10 @@ class Trainer:
         # Epoch statistics
         # ====================================================
         epoch_loss = (total_loss / max(final_total, 1))
+        epoch_coarse_acc = (routing_correct / max(routing_total, 1))
+        epoch_fine_acc = (fine_correct / max(fine_total, 1))
         epoch_final_acc = (final_correct / max(final_total, 1))
-        return  epoch_loss, epoch_final_acc
+        return epoch_loss, epoch_coarse_acc, epoch_fine_acc, epoch_final_acc
     # ========================================================
     # 统一接口
     # ========================================================

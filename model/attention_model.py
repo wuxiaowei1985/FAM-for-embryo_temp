@@ -69,12 +69,12 @@ class HierarchicalFocusAttentionModel(nn.Module):
     # =========================================================
     def forward_fine(self, images, return_dict=False):
         backbone = self.extract_backbone_features(images)
-        pyramid = [backbone["p2"], backbone["p3"], backbone["p4"]]
+        pyramid = [ backbone["p2"], backbone["p3"], backbone["p4"]]
         # -----------------------------------------------------
         # Phase 1 frozen
         # -----------------------------------------------------
         with torch.no_grad():
-            focus_tokens, coarse_feature, focus_token_weight, focus_weight = self.focus_attention(backbone["tokens"], return_sequence=True)
+            focus_tokens, coarse_feature, focus_token_weight, focus_weight = (self.focus_attention(backbone["tokens"], return_sequence=True))
             coarse_logits = self.coarse_head(coarse_feature)
             coarse_probs = torch.softmax(coarse_logits, dim=1)
             coarse_pred = coarse_probs.argmax(dim=1)
@@ -84,56 +84,53 @@ class HierarchicalFocusAttentionModel(nn.Module):
         coarse_embedding = self.coarse_embedding(coarse_probs)
         # [B, 448, 512]
         fine_query_tokens = (focus_tokens + coarse_embedding.unsqueeze(1))
-        B = images.size(0)
-        device = images.device
-        dtype = fine_query_tokens.dtype
         # =====================================================
         # Pronuclear Expert
         # =====================================================
-        branch_feature, branch_attention = self.msfd_attention["pronuclear"](fine_query_tokens, pyramid, return_attention=True)
+        # 训练阶段不需要保存 attention map。
+        # return_attention=False 可以减少显存占用。
+        branch_feature = self.msfd_attention["pronuclear"](fine_query_tokens, pyramid, return_attention=False)
         pronuclear_logits = self.pronuclear_head(branch_feature)
-        pronuclear_attention = branch_attention
         # =====================================================
         # Cleavage Expert
         # =====================================================
-        branch_feature, branch_attention = self.msfd_attention["cleavage"](fine_query_tokens, pyramid, return_attention=True)
+        branch_feature = self.msfd_attention["cleavage"](fine_query_tokens, pyramid, return_attention=False)
         cleavage_logits = self.cleavage_head(branch_feature)
-        cleavage_attention = branch_attention
         # =====================================================
         # Blastocyst Expert
         # =====================================================
-        branch_feature, branch_attention = self.msfd_attention["blastocyst"](fine_query_tokens, pyramid, return_attention=True)
+        branch_feature = self.msfd_attention["blastocyst"](fine_query_tokens, pyramid, return_attention=False)
         blastocyst_logits = self.blastocyst_head(branch_feature)
-        blastocyst_attention = branch_attention
         # =====================================================
-        # Soft Routing
-        # P(y | x) = P(coarse | x) * P(y | coarse, x)
-        # [B, 3]  [B, 8] [B, 5] -> [B, 16]
-        # =====================================================
-        pronuclear_probs = torch.softmax(pronuclear_logits, dim=1)
-        cleavage_probs = torch.softmax(cleavage_logits, dim=1)
-        blastocyst_probs = torch.softmax(blastocyst_logits, dim=1)
-        final_probs = torch.zeros(B, 16, device=device, dtype=dtype)
+        # Soft Routing P(y | x) = P(coarse | x) * P(y | coarse, x)
+        # ====================================================
+        coarse_log_probs = torch.log_softmax(coarse_logits, dim=1)
+        pronuclear_log_probs = torch.log_softmax(pronuclear_logits, dim=1)
+        cleavage_log_probs = torch.log_softmax(cleavage_logits, dim=1)
+        blastocyst_log_probs = torch.log_softmax(blastocyst_logits, dim=1)
         # -----------------------------------------------------
+        # Construct final 16-class log probability
+        # PN: 0 ~ 2
+        # CL: 3 ~ 10
+        # BL: 11 ~ 15
+        # log P(y | x) = log P(c | x) + log P(y | c, x)
+        # -----------------------------------------------------
+        final_log_probs = torch.empty(images.size(0), 16, device=images.device, dtype=coarse_log_probs.dtype)
         # Pronuclear
-        # 0 ~ 2
-        # -----------------------------------------------------
-        final_probs[:, 0:3] = (coarse_probs[:, 0:1] * pronuclear_probs)
-        # -----------------------------------------------------
+        final_log_probs[:, 0:3] = (coarse_log_probs[:, 0:1] + pronuclear_log_probs)
         # Cleavage
-        # 3 ~ 10
-        # -----------------------------------------------------
-        final_probs[:, 3:11] = (coarse_probs[:, 1:2] * cleavage_probs)
-        # -----------------------------------------------------
+        final_log_probs[:, 3:11] = (coarse_log_probs[:, 1:2] + cleavage_log_probs)
         # Blastocyst
-        # 11 ~ 15
+        final_log_probs[:, 11:16] = (coarse_log_probs[:, 2:3] + blastocyst_log_probs)
         # -----------------------------------------------------
-        final_probs[:, 11:16] = (coarse_probs[:, 2:3] * blastocyst_probs)
+        # Convert to probability for inference / evaluation
         # -----------------------------------------------------
-        # Safety check
-        # 理论上：sum(final_probs) = 1
+        final_probs = torch.exp(final_log_probs)
         # -----------------------------------------------------
-        assert final_probs.shape == (B, 16)
+        # Safety checks
+        # -----------------------------------------------------
+        assert final_log_probs.shape == (images.size(0), 16)
+        assert final_probs.shape == (images.size(0), 16)
         if return_dict:
             return {
                 "coarse_logits": coarse_logits,
@@ -142,9 +139,10 @@ class HierarchicalFocusAttentionModel(nn.Module):
                 "pronuclear_logits": pronuclear_logits,
                 "cleavage_logits": cleavage_logits,
                 "blastocyst_logits": blastocyst_logits,
-                "pronuclear_probs": pronuclear_probs,
-                "cleavage_probs": cleavage_probs,
-                "blastocyst_probs": blastocyst_probs,
+                "pronuclear_probs": torch.exp(pronuclear_log_probs),
+                "cleavage_probs": torch.exp(cleavage_log_probs),
+                "blastocyst_probs": torch.exp(blastocyst_log_probs),
+                "final_log_probs": final_log_probs,
                 "final_probs": final_probs,
                 "focus_attention": focus_token_weight,
                 "focus_weight": focus_weight,
@@ -153,9 +151,9 @@ class HierarchicalFocusAttentionModel(nn.Module):
                 "coarse_embedding": coarse_embedding,
                 "pyramid": pyramid,
                 "query_tokens": fine_query_tokens,
-                "pronuclear_msfd_attention": pronuclear_attention,
-                "cleavage_msfd_attention": cleavage_attention,
-                "blastocyst_msfd_attention": blastocyst_attention,
+                "pronuclear_msfd_attention": None,
+                "cleavage_msfd_attention": None,
+                "blastocyst_msfd_attention": None,
             }
         return pronuclear_logits, cleavage_logits, blastocyst_logits
 
