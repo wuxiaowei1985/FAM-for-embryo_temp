@@ -37,7 +37,7 @@ class FocusAttention(nn.Module):
         self.num_focus = num_focus
         self.patches_per_focus = patches_per_focus
         self.num_tokens = (num_focus * patches_per_focus)
-        self.focus_embedding = nn.Parameter(torch.randn(num_focus, feature_dim) * 0.02)
+        self.focus_embedding = nn.Parameter(torch.randn(num_focus * patches_per_focus, feature_dim))
         self.encoder = nn.ModuleList([
             FocusAttentionBlock(feature_dim=feature_dim, num_heads=num_heads, dropout=dropout)
             for _ in range(depth)
@@ -51,8 +51,7 @@ class FocusAttention(nn.Module):
             raise ValueError(f"Expected {self.num_tokens} tokens, "f"got {L}")
         if D != self.feature_dim:
             raise ValueError(f"Expected feature dimension "f"{self.feature_dim}, got {D}")
-        focus_ids = torch.arange(self.num_focus, device=x.device).repeat_interleave(self.patches_per_focus)
-        embedding = self.focus_embedding[focus_ids].unsqueeze(0)
+        embedding = self.focus_embedding.unsqueeze(0)
         return x + embedding
 
     def encode(self, x):

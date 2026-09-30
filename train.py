@@ -51,12 +51,10 @@ def create_optimizer(model, lr):
 # 创建 scheduler
 # ============================================================
 def create_scheduler(optimizer):
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer,
-        mode="min",
-        factor=cfg.FACTOR,
-        patience=cfg.SCHEDULER_PATIENCE,
-        min_lr=cfg.MIN_LR
+        T_max=cfg.EPOCHS,
+        eta_min=cfg.MIN_LR
     )
     return scheduler
 # ============================================================
@@ -117,7 +115,7 @@ def train_phase1(model):
         # ----------------------------------------------------
         # scheduler
         # ----------------------------------------------------
-        scheduler.step(val_loss)
+        scheduler.step()
         # ----------------------------------------------------
         # early stopping
         # 你之前已经改成根据 accuracy
@@ -220,7 +218,7 @@ def train_phase2(model):
         # ----------------------------------------------------
         # scheduler
         # ----------------------------------------------------
-        scheduler.step(val_loss)
+        scheduler.step()
         # ----------------------------------------------------
         # early stopping
         # Phase 2 最终任务： 16-class validation accuracy

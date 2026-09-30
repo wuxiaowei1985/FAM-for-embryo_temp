@@ -1,6 +1,7 @@
 import torch
 from tqdm import tqdm
 from dataset.labels import get_coarse_label, get_fine_label
+from configs import config as cfg
 
 class Trainer:
     def __init__(self, model, criterion, optimizer, device, stage="coarse"):
@@ -84,7 +85,7 @@ class Trainer:
         # ----------------------------------------------------
         # Final 16-class loss weight
         # ----------------------------------------------------
-        final_loss_weight = 0.5
+        final_loss_weight = cfg.FINAL_LOSS_WEIGHT
         # ----------------------------------------------------
         # Statistics
         # ----------------------------------------------------
