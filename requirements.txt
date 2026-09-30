@@ -6,5 +6,3 @@ timm
 matplotlib
 tqdm
 Pillow
-torch
-torchvision
