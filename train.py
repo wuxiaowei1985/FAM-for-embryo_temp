@@ -133,8 +133,10 @@ def train_phase1(model):
         history.update(
             epoch=epoch + 1,
             train_loss=train_loss,
+            train_coarse_acc=train_acc,
+            train_fine_acc=0.0,
+            train_final_acc=0.0,
             val_loss=val_loss,
-            train_acc=train_acc,
             val_acc=val_acc,
             lr=lr,
         )

@@ -4,7 +4,7 @@ from pathlib import Path
 
 class EarlyStopping:
     """
-    Early stops the training if validation loss doesn't improve.
+    Early stops the training if validation val doesn't improve.
     """
     def __init__(self, patience = 10, min_delta = 0.0, save_path = None, verbose = True):
         self.patience = patience

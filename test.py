@@ -20,18 +20,16 @@ CLASSES_NUM = len(LABEL_NAMES)
 # ============================================================
 # Soft Routing
 # ============================================================
-def get_final_probs(output):
+def get_final_log_probs(output, num_classes=CLASSES_NUM):
     """
-    使用模型内部的 soft routing 获取最终 16 类概率。
-    final_probs:  [B, 16]
-    P(y | x) = P(coarse | x) * P(y | coarse, x)
+    直接使用模型输出的 log-space 概率，与训练/验证保持一致。
     """
-    final_probs = output["final_probs"]
-    assert final_probs.dim() == 2
-    assert final_probs.size(1) == CLASSES_NUM
-    probability_sum = final_probs.sum(dim=1)
-    assert torch.allclose(probability_sum, torch.ones_like(probability_sum), atol=1e-5)
-    return final_probs
+    final_log_probs = output["final_log_probs"]
+    assert final_log_probs.dim() == 2
+    assert final_log_probs.size(1) == num_classes
+    log_sum = torch.logsumexp(final_log_probs, dim=1)
+    assert torch.allclose(log_sum, torch.zeros_like(log_sum), atol=1e-4)
+    return final_log_probs
 # ============================================================
 # Main
 # ============================================================
@@ -79,11 +77,11 @@ def main():
             # ------------------------------------------------
             # 得到最终16类概率
             # ------------------------------------------------
-            final_probs = get_final_probs(output)
+            final_log_probs = get_final_log_probs(output)
             # ------------------------------------------------
             # 最终16类预测
             # ------------------------------------------------
-            preds = torch.argmax(final_probs, dim=1)
+            preds = torch.argmax(final_log_probs, dim=1)
             # ------------------------------------------------
             # Overall statistics
             # ------------------------------------------------

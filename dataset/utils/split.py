@@ -5,8 +5,8 @@ from configs import config as cfg
 def split_embryos(root, train_ratio=0.7, val_ratio=0.15, seed=cfg.SEED):
     root = Path(root)
     embryos = sorted([p.name for p in (root / "embryo_dataset").iterdir() if p.is_dir()])
-    random.seed(seed)
-    random.shuffle(embryos)
+    rng = random.Random(seed)
+    rng.shuffle(embryos)
     n = len(embryos)
     train_end = int(n * train_ratio)
     val_end = int(n * (train_ratio + val_ratio))

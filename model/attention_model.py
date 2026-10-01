@@ -83,7 +83,7 @@ class HierarchicalFocusAttentionModel(nn.Module):
         # -----------------------------------------------------
         coarse_embedding = self.coarse_embedding(coarse_probs)
         # [B, 448, 512]
-        fine_query_tokens = (focus_tokens + coarse_embedding.unsqueeze(1))
+        fine_query_tokens = focus_tokens + coarse_embedding
         # =====================================================
         # Pronuclear Expert
         # =====================================================
