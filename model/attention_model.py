@@ -13,14 +13,14 @@ class HierarchicalFocusAttentionModel(nn.Module):
         Phase-1 frozen
         Focus tokens + Coarse Embedding -> [B,448,512] -> branch-specific MSFD -> [B,448,512] -> Token Pool -> [B,512] -> Fine Head
     """
-    def __init__(self, pretrained=False, feature_dim=512, coarse=3, pronuclear=3, cleavage=8, blastocyst=5, num_layers=2, dropout=0.2):
+    def __init__(self, pretrained=False, feature_dim=512, coarse=3, pronuclear=3, cleavage=8, blastocyst=5, num_layers=2, dropout=0.2, image_size=224):
         super().__init__()
         if pretrained:
             raise ValueError("Pretrained weights are disabled.")
         if feature_dim != 512:
             raise ValueError("feature_dim must be 512.")
         self.feature_dim = feature_dim
-        self.encoder = Focal3DBackbone(num_focus=7, embed_dim=512)
+        self.encoder = Focal3DBackbone(num_focus=7, embed_dim=512, image_size=image_size)
         self.focus_attention = FocusAttention(feature_dim=512, num_heads=8, depth=num_layers, num_focus=7, patches_per_focus=64, dropout=dropout)
         self.coarse_head = ClassificationHead(in_features=512, hidden_features=256, num_classes=coarse, dropout=dropout)
         self.coarse_embedding = CoarseEmbedding(num_classes=coarse, feature_dim=512)

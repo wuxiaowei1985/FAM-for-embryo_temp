@@ -21,17 +21,17 @@ train_embryos, val_embryos, test_embryos = split_embryos(cfg.DATA_ROOT, seed=cfg
 
 train_dataset = EmbryoDataset(
     root=cfg.DATA_ROOT,
-    transform=FocusTransform(num_views=cfg.NUM_AUG_VIEWS),
+    transform=FocusTransform(image_size=cfg.IMAGE_SIZE, num_views=cfg.NUM_AUG_VIEWS),
     embryo_list=train_embryos
 )
 val_dataset = EmbryoDataset(
     root=cfg.DATA_ROOT,
-    transform=FocusValTransform(),
+    transform=FocusValTransform(image_size=cfg.IMAGE_SIZE),
     embryo_list=val_embryos
 )
 test_dataset = EmbryoDataset(
     root=cfg.DATA_ROOT,
-    transform=FocusValTransform(),
+    transform=FocusValTransform(image_size=cfg.IMAGE_SIZE),
     embryo_list=test_embryos
 )
 

@@ -4,9 +4,9 @@ import torchvision.transforms.functional as TF
 from torchvision.transforms import InterpolationMode
 
 class FocusTransform:
-    def __init__( self, image_size=500, num_views=2, rotation=10.0, translate=0.03, scale_range=(0.97, 1.03), brightness_range=(0.90, 1.10), contrast_range=(0.90, 1.10), noise_std=0.01):
-        if image_size != 500:
-            raise ValueError("Native-resolution training requires image_size=500.")
+    def __init__(self, image_size=224, num_views=2, rotation=10.0, translate=0.03, scale_range=(0.97, 1.03), brightness_range=(0.90, 1.10), contrast_range=(0.90, 1.10), noise_std=0.01):
+        if image_size < 128:
+            raise ValueError("image_size must be >= 128.")
         if num_views < 1:
             raise ValueError("num_views must be >= 1")
         self.image_size = image_size
@@ -24,8 +24,8 @@ class FocusTransform:
         max_dy = int(height * self.translate)
         translate = (random.randint(-max_dx, max_dx), random.randint(-max_dy, max_dy))
         scale = random.uniform(*self.scale_range)
-        hflip = (random.random() < 0.5)
-        vflip = (random.random() < 0.5)
+        hflip = random.random() < 0.5
+        vflip = random.random() < 0.5
         brightness = random.uniform(*self.brightness_range)
         contrast = random.uniform(*self.contrast_range)
         return angle, translate, scale, hflip, vflip, brightness, contrast
@@ -34,6 +34,11 @@ class FocusTransform:
         angle, translate, scale, hflip, vflip, brightness, contrast = params
         output = []
         for img in images:
+            # -------------------------------------------------
+            # Resize
+            # 七个焦平面必须使用完全相同的输出尺寸
+            # -------------------------------------------------
+            img = TF.resize(img, [self.image_size, self.image_size], interpolation=InterpolationMode.BILINEAR, antialias=True)
             # -------------------------------------------------
             # 几何增强必须在七个焦平面之间共享
             # -------------------------------------------------
@@ -54,7 +59,6 @@ class FocusTransform:
             tensor = TF.normalize(tensor, mean=[0.5], std=[0.5])
             output.append(tensor)
         return torch.stack(output, dim=0)
-
     def __call__(self, images):
         if len(images) != 7:
             raise ValueError(f"Expected 7 focal planes, got {len(images)}")
@@ -68,9 +72,9 @@ class FocusTransform:
         return torch.stack(views, dim=0)
 
 class FocusValTransform:
-    def __init__(self, image_size=500):
-        if image_size != 500:
-            raise ValueError("Native-resolution validation requires image_size=500.")
+    def __init__(self, image_size=224):
+        if image_size < 128:
+            raise ValueError("image_size must be >= 128.")
         self.image_size = image_size
 
     def __call__(self, images):
@@ -80,8 +84,12 @@ class FocusValTransform:
         for img in images:
             if img.size != (500, 500):
                 raise ValueError(f"Expected 500x500 image, got {img.size}")
+            # -------------------------------------------------
+            # Validation / Test 同样统一 resize
+            # -------------------------------------------------
+            img = TF.resize(img, [self.image_size, self.image_size], interpolation=InterpolationMode.BILINEAR, antialias=True)
             tensor = TF.to_tensor(img)
             tensor = TF.normalize(tensor, mean=[0.5], std=[0.5])
             output.append(tensor)
-        # [1,7,1,500,500]
+        # [1,7,1,H,W]
         return torch.stack(output, dim=0).unsqueeze(0)
