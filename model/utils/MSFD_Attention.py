@@ -183,7 +183,7 @@ class MSFDAttention(nn.Module):
         fused = torch.sum(x * token_weight.unsqueeze(-1), dim=1)
         if return_attention:
             return fused, attention_maps
-        return fused, None
+        return fused
 
 if __name__ == "__main__":
     model = MSFDAttention(feature_dim=512)

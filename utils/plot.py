@@ -20,7 +20,7 @@ def plot_training_curve(csv_path, save_dir):
         plt.plot(history["epoch"], history["train_final_acc"] * 100, label="Train Final Acc")
     else:
         plt.plot(history["epoch"], history["train_coarse_acc"] * 100, label="Train Coarse Acc")
-    plt.plot(history["epoch"], history["val_acc"], label="Validation Accuracy", linewidth=2)
+    plt.plot(history["epoch"], history["val_acc"] * 100, label="Validation Accuracy", linewidth=2)
     plt.xlabel("Epoch")
     plt.ylabel("Accuracy (%)")
     plt.grid(True)
