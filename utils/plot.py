@@ -16,7 +16,7 @@ def plot_training_curve(csv_path, save_dir):
     plt.close()
     # Accuracy
     plt.figure(figsize=(8, 5))
-    if "train_final_acc" in history.columns and history["train_final_acc"].notna().any():
+    if "train_final_acc" in history.columns and history["train_final_acc"].max() > 0:
         plt.plot(history["epoch"], history["train_final_acc"] * 100, label="Train Final Acc")
     else:
         plt.plot(history["epoch"], history["train_coarse_acc"] * 100, label="Train Coarse Acc")
