@@ -68,16 +68,16 @@ class HierarchicalFocusAttentionModel(nn.Module):
     # Phase 2
     # =========================================================
     def forward_fine(self, images, return_dict=False):
-        backbone = self.extract_backbone_features(images)
-        pyramid = [ backbone["p2"], backbone["p3"], backbone["p4"]]
         # -----------------------------------------------------
         # Phase 1 frozen
         # -----------------------------------------------------
         with torch.no_grad():
-            focus_tokens, coarse_feature, focus_token_weight, focus_weight = (self.focus_attention(backbone["tokens"], return_sequence=True))
+            backbone = self.extract_backbone_features(images)
+            focus_tokens, coarse_feature, focus_token_weight, focus_weight = self.focus_attention(backbone["tokens"], return_sequence=True)
             coarse_logits = self.coarse_head(coarse_feature)
             coarse_probs = torch.softmax(coarse_logits, dim=1)
             coarse_pred = coarse_probs.argmax(dim=1)
+        pyramid = [backbone["p2"], backbone["p3"], backbone["p4"]]
         # -----------------------------------------------------
         # Coarse semantic embedding
         # -----------------------------------------------------

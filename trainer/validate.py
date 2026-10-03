@@ -1,6 +1,7 @@
 import torch
 from tqdm import tqdm
 from dataset.labels import get_coarse_label
+from configs import config as cfg
 
 class Validator:
     def __init__(self, model, criterion, device, stage="coarse"):
@@ -18,11 +19,13 @@ class Validator:
         """
         assert final_log_probs.dim() == 2
         assert final_log_probs.size(1) == num_classes
-        # log 空间下：logsumexp 应约等于 0（即概率和为 1）
+        # ====================================================
+        # log-space:
+        # logsumexp(log P_1, ..., log P_n) = log(sum P_i) = log(1) = 0
+        # ====================================================
         log_sum = torch.logsumexp(final_log_probs, dim=1)
-        assert torch.allclose(
-            log_sum, torch.zeros_like(log_sum), atol=1e-4
-        ), f"final_log_probs not normalized, max |logsumexp| = {log_sum.abs().max().item():.6f}"
+        assert torch.allclose(log_sum, torch.zeros_like(log_sum), atol=1e-4), \
+            "final_log_probs not normalized, "f"max |logsumexp| = "f"{log_sum.abs().max().item():.6f}"
         return final_log_probs
     # ========================================================
     # Phase 1 validation
@@ -35,21 +38,57 @@ class Validator:
         total = 0
         progress = tqdm(loader, desc="Coarse validate")
         for batch in progress:
-            images = batch["images"].to(self.device)
-            labels = batch["label"].to(self.device)
-            coarse_labels = torch.tensor([get_coarse_label(int(label)) for label in labels], dtype=torch.long, device=self.device,)
-            output = self.model({"images": images, "label": labels}, stage="coarse", return_dict=True,)
-            logits = output["coarse_logits"]
-            loss = self.criterion(logits, coarse_labels)
+            # ====================================================
+            # Data
+            # ====================================================
+            images = batch["images"].to(self.device, non_blocking=True)
+            labels = batch["label"].to(self.device, non_blocking=True)
+            # ====================================================
+            # 16 classes -> 3 coarse classes
+            # ====================================================
+            coarse_labels = torch.tensor(
+                [get_coarse_label(int(label)) for label in labels],
+                dtype=torch.long,
+                device=self.device
+            )
+            # ====================================================
+            # Forward
+            # ====================================================
+            with torch.autocast(device_type=self.device.type, dtype=torch.float16):
+                output = self.model(
+                    {"images": images, "label": labels},
+                    stage="coarse",
+                    return_dict=True
+                )
+                logits = output["coarse_logits"]
+                # =================================================
+                # Coarse Loss
+                # =================================================
+                loss = self.criterion(logits,coarse_labels)
+            # ====================================================
+            # Statistics
+            # ====================================================
             batch_size = labels.size(0)
             total_loss += loss.item() * batch_size
             pred = logits.argmax(dim=1)
             correct += (pred == coarse_labels).sum().item()
             total += batch_size
-        return total_loss / max(total, 1), correct / max(total, 1)
+            progress.set_postfix(
+                loss=f"{loss.item():.4f}",
+                acc=f"{correct / max(total, 1):.4f}"
+            )
+        # ========================================================
+        # Epoch statistics
+        # ========================================================
+        epoch_loss = total_loss / max(total, 1)
+        epoch_acc = correct / max(total, 1)
+        return epoch_loss, epoch_acc
     # ========================================================
     # Phase 2 validation
-    # 最终输出 16 类，损失在 log-space 计算
+    # ========================================================
+    # 最终输出 16 类。
+    # Loss: L_final = -log P(y | x)
+    # 全程保持 log-space。
     # ========================================================
     @torch.no_grad()
     def validate_fine(self, loader):
@@ -59,24 +98,44 @@ class Validator:
         total = 0
         progress = tqdm(loader, desc="Fine validate")
         for batch in progress:
-            images = batch["images"].to(self.device)
-            labels = batch["label"].to(self.device)
+            # ====================================================
+            # Data
+            # ====================================================
+            images = batch["images"].to(self.device, non_blocking=True)
+            labels = batch["label"].to(self.device, non_blocking=True)
             batch_size = labels.size(0)
-            # ================================================
+            # ====================================================
             # Forward
-            # ================================================
-            output = self.model({"images": images, "label": labels}, stage="fine", return_dict=True,)
-            # ================================================
-            # 使用 log-space 检查 + log-space 损失 与 train_fine_one_epoch 完全一致： L_final = -log P(y | x)
-            # ================================================
-            final_log_probs = self.check_log_probs(output["final_log_probs"])
-            target_log_probs = final_log_probs[torch.arange(batch_size, device=self.device), labels]
-            loss = -target_log_probs.mean()
-            # ================================================
-            # 预测：log 空间 argmax == 概率空间 argmax
-            # 无需先 exp 再 argmax
-            # ================================================
+            # ====================================================
+            with torch.autocast(device_type=self.device.type, dtype=torch.float16):
+                output = self.model(
+                    {"images": images, "label": labels},
+                    stage="fine",
+                    return_dict=True
+                )
+                # =================================================
+                # Log-space check
+                # =================================================
+                final_log_probs = self.check_log_probs(output["final_log_probs"])
+                # =================================================
+                # Target log probability
+                # =================================================
+                target_log_probs = final_log_probs[torch.arange(batch_size, device=self.device), labels]
+
+                # =================================================
+                # Final 16-class Loss
+                # =================================================
+                loss = -target_log_probs.mean()
+            # ====================================================
+            # Prediction
+            # ====================================================
+            # log 空间 argmax = probability 空间 argmax
+            # 无需 exp。
+            # ====================================================
             pred = final_log_probs.argmax(dim=1)
+            # ====================================================
+            # Statistics
+            # ====================================================
             correct += (pred == labels).sum().item()
             total += batch_size
             total_loss += loss.item() * batch_size
@@ -84,7 +143,12 @@ class Validator:
                 loss=f"{loss.item():.4f}",
                 acc=f"{correct / max(total, 1):.4f}"
             )
-        return total_loss / max(total, 1), correct / max(total, 1)
+        # ========================================================
+        # Epoch statistics
+        # ========================================================
+        epoch_loss = total_loss / max(total, 1)
+        epoch_acc = correct / max(total, 1)
+        return epoch_loss, epoch_acc
     # ========================================================
     # 统一接口
     # ========================================================
