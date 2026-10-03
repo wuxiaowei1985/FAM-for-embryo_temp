@@ -165,7 +165,7 @@ class Trainer:
             # Forward
             # ====================================================
             self.optimizer.zero_grad(set_to_none=True)
-            with torch.autocast(device_type=self.device.type, dtype=torch.float16, enabled=self.use_amp):
+            with torch.autocast(device_type=self.device.type, dtype=torch.float16):
                 output = self.model(
                     {"images": images, "label": labels},
                     stage="fine",
