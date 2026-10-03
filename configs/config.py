@@ -5,7 +5,7 @@ import torch
 SEED = 42
 NUM_AUG_VIEWS = 2
 IMAGE_SIZE = 224
-BATCH_SIZE = 16
+BATCH_SIZE = 8
 EPOCHS = 50
 FINAL_LOSS_WEIGHT = 1.0
 LR = 1e-4           # 注意力/分类头用正常学习率
@@ -18,9 +18,14 @@ LABEL_SMOOTHING = 0.05
 EARLY_STOPPING_PATIENCE = 20
 MIN_DELTA = 0.0
 
+USE_AMP = True
 TRAIN_STAGE = "both"    #"coarse"、"fine"、"both"
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+GPU_COUNT = 2
+GPU_IDS = [0, 1]
+MASTER_PORT = 29501
+
 CURRENT_MODEL = "hierarchical_focus_attention"
 
 # 获取 configs.py 所在目录的父目录（即与 configs 同级的目录）
