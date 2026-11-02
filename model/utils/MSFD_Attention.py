@@ -125,15 +125,15 @@ class Deformable3DBlock(nn.Module):
 class MSFDAttention(nn.Module):
     """
     Input:
-        query: [B,448,512]
+        query_tokens: [B,343,512]
         pyramid:
-            p2 [B,512,7,63,63]
-            p3 [B,512,7,32,32]
-            p4 [B,512,7,16,16]
+            p2: [B,512,7,56,56]
+            p3: [B,512,7,28,28]
+            p4: [B,512,7,14,14]
     Output:
         fused_feature: [B,512]
     """
-    def __init__(self, feature_dim=512, num_heads=8, depth=2, num_levels=3, num_points=4, num_focus=7, query_h=8, query_w=8, dropout=0.2):
+    def __init__(self, feature_dim=512, num_heads=8, depth=2, num_levels=3, num_points=4, num_focus=7, query_h=7, query_w=7, dropout=0.2):
         super().__init__()
         self.feature_dim = feature_dim
         self.num_heads = num_heads

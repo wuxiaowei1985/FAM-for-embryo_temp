@@ -5,10 +5,7 @@ class ConvBNAct3D(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride=(1, 1, 1), padding=None):
         super().__init__()
         if padding is None:
-            if isinstance(kernel_size, int):
-                padding = kernel_size // 2
-            else:
-                padding = tuple(k // 2 for k in kernel_size)
+            padding = kernel_size // 2 if isinstance(kernel_size, int) else tuple(k // 2 for k in kernel_size)
         self.block = nn.Sequential(
             nn.Conv3d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding, bias=False),
             nn.BatchNorm3d(out_channels),
@@ -21,10 +18,9 @@ class ConvBNAct3D(nn.Module):
 class ResidualBlock3D(nn.Module):
     def __init__(self, in_channels, out_channels, stride=(1, 1, 1)):
         super().__init__()
-
         self.conv1 = ConvBNAct3D(in_channels, out_channels, kernel_size=3, stride=stride, padding=1)
         self.conv2 = nn.Sequential(
-            nn.Conv3d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.Conv3d(out_channels, out_channels, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm3d(out_channels)
         )
         if in_channels != out_channels or stride != (1, 1, 1):
@@ -40,78 +36,47 @@ class ResidualBlock3D(nn.Module):
         identity = self.shortcut(x)
         x = self.conv1(x)
         x = self.conv2(x)
-        x = x + identity
-        x = self.act(x)
-        return x
+        return self.act(x + identity)
 
 class Focal3DBackbone(nn.Module):
     """
-    Input: [B, F, 1, image_size, image_size]
-    Spatial resolution: image_size -> 128 -> 64 -> 32 -> 16 -> 8
+    Input: [B,7,1,224,224]
+    Spatial resolution: 224 -> 112 -> 56 -> 28 -> 14 -> 7
     Outputs:
-        p2: [B, 512, 7, 64, 64]
-        p3: [B, 512, 7, 32, 32]
-        p4: [B, 512, 7, 16, 16]
-        tokens: [B, 448, 512]
+        p2: [B,512,7,56,56]
+        p3: [B,512,7,28,28]
+        p4: [B,512,7,14,14]
+        tokens: [B,343,512]
     """
     def __init__(self, num_focus=7, embed_dim=512, image_size=224):
         super().__init__()
+        if image_size != 224:
+            raise ValueError("Focal3DBackbone requires image_size=224.")
+        if num_focus != 7:
+            raise ValueError("Focal3DBackbone requires exactly 7 focal planes.")
         self.num_focus = num_focus
         self.embed_dim = embed_dim
-        self.image_size = image_size
-        # =========================================================
-        # Query size
-        # Final feature map:
-        # 7 × 8 × 8 = 448 tokens
-        # =========================================================
-        self.query_h = 8
-        self.query_w = 8
-        # =========================================================
-        # Stem
-        # Input: [B,1,7,image_size,image_size]
-        # Conv: image_size -> image_size
-        # AdaptiveAvgPool:
-        # image_size -> 128
-        # F: 7 -> 7
-        # =========================================================
+        self.image_size = 224
+        self.query_h = 7
+        self.query_w = 7
         self.stem = nn.Sequential(
-            nn.Conv3d(1, 64, kernel_size=(3, 7, 7), stride=(1, 1, 1), padding=(1, 3, 3), bias=False),
-            nn.BatchNorm3d(64),
-            nn.GELU(),
-            nn.AdaptiveAvgPool3d((num_focus, 128, 128))
+            ConvBNAct3D(1, 64, kernel_size=(3, 7, 7), stride=(1, 2, 2), padding=(1, 3, 3))
         )
-        # =========================================================
-        # Stage 1
-        # 128 -> 64
-        # =========================================================
         self.stage1 = nn.Sequential(
             ResidualBlock3D(64, 128, stride=(1, 2, 2)),
             ResidualBlock3D(128, 128)
         )
         self.p2_projection = nn.Conv3d(128, embed_dim, kernel_size=1, bias=False)
-        # =========================================================
-        # Stage 2
-        # 64 -> 32
-        # =========================================================
         self.stage2 = nn.Sequential(
             ResidualBlock3D(128, 256, stride=(1, 2, 2)),
             ResidualBlock3D(256, 256)
         )
         self.p3_projection = nn.Conv3d(256, embed_dim, kernel_size=1, bias=False)
-        # =========================================================
-        # Stage 3
-        # 32 -> 16
-        # =========================================================
         self.stage3 = nn.Sequential(
             ResidualBlock3D(256, 512, stride=(1, 2, 2)),
             ResidualBlock3D(512, 512)
         )
         self.p4_projection = nn.Conv3d(512, embed_dim, kernel_size=1, bias=False)
-        # =========================================================
-        # Patch Embedding
-        # P4: [B,512,7,16,16] -># [B,512,7,8,8]
-        # 只切 H/W，不切 focal dimension
-        # =========================================================
         self.patch_embed = nn.Conv3d(embed_dim, embed_dim, kernel_size=(1, 2, 2), stride=(1, 2, 2), bias=False)
         self.patch_norm = nn.LayerNorm(embed_dim)
         self._init_weights()
@@ -131,67 +96,27 @@ class Focal3DBackbone(nn.Module):
         if x.ndim != 5:
             raise ValueError(f"Expected [B,F,C,H,W], got {tuple(x.shape)}")
         B, F, C, H, W = x.shape
-        if F != self.num_focus:
-            raise ValueError(f"Expected {self.num_focus} focal planes, got {F}")
-        if C != 1:
-            raise ValueError(f"Expected grayscale C=1, got {C}")
-        if H != W:
-            raise ValueError(f"Only square input is supported, got {(H, W)}")
-        if (H, W) != (self.image_size, self.image_size):
-            raise ValueError(f"Expected {self.image_size}x{self.image_size} input, "f"got {(H, W)}")
-        # =========================================================
-        # [B,F,C,H,W] -> [B,C,F,H,W]
-        # =========================================================
+        if (F, C, H, W) != (7, 1, 224, 224):
+            raise ValueError(f"Expected [B,7,1,224,224], got {tuple(x.shape)}")
         x = x.permute(0, 2, 1, 3, 4).contiguous()
-        # =========================================================
-        # Stem
-        # [B,1,7,224,224] -> [B,64,7,128,128]
-        # =========================================================
-        x = self.stem(x)
-        # =========================================================
-        # Stage 1
-        # [B,64,7,128,128] -> [B,128,7,64,64]
-        # =========================================================
-        x1 = self.stage1(x)
+        x = self.stem(x)                                      # [B,64,7,112,112]
+        x1 = self.stage1(x)                                   # [B,128,7,56,56]
         p2 = self.p2_projection(x1)
-        # [B,512,7,64,64]
-        # =========================================================
-        # Stage 2
-        # [B,128,7,64,64] -> [B,256,7,32,32]
-        # =========================================================
-        x2 = self.stage2(x1)
+        x2 = self.stage2(x1)                                  # [B,256,7,28,28]
         p3 = self.p3_projection(x2)
-        # [B,512,7,32,32]
-        # =========================================================
-        # Stage 3
-        # [B,256,7,32,32] -> [B,512,7,16,16]
-        # =========================================================
-        x3 = self.stage3(x2)
+        x3 = self.stage3(x2)                                  # [B,512,7,14,14]
         p4 = self.p4_projection(x3)
-        # [B,512,7,16,16]
-        # =========================================================
-        # Patch embedding
-        # [B,512,7,16,16] -> [B,512,7,8,8]
-        # =========================================================
-        patch = self.patch_embed(p4)
-        # =========================================================
-        # Flatten
-        # 7 × 8 × 8 = 448
-        # [B,512,7,8,8] -> [B,448,512]
-        # =========================================================
-        tokens = patch.flatten(2).transpose(1, 2)
-        tokens = self.patch_norm(tokens)
-        expected_tokens = self.num_focus * self.query_h * self.query_w
-        if tokens.shape[1] != expected_tokens:
-            raise RuntimeError(f"Expected {expected_tokens} tokens, "f"got {tokens.shape[1]}")
+        patch = self.patch_embed(p4)                          # [B,512,7,7,7]
+        tokens = self.patch_norm(patch.flatten(2).transpose(1, 2))
+        if tokens.shape[1:] != (343, self.embed_dim):
+            raise RuntimeError(f"Unexpected token shape: {tuple(tokens.shape)}")
         return {"p2": p2, "p3": p3, "p4": p4, "tokens": tokens}
 
 if __name__ == "__main__":
-    model = Focal3DBackbone(num_focus=7, embed_dim=512, image_size=224)
+    model = Focal3DBackbone()
     x = torch.randn(1, 7, 1, 224, 224)
     with torch.no_grad():
         output = model(x)
     for key, value in output.items():
-        print(f"{key:10s}: "f"{tuple(value.shape)}")
-    num_params = sum(p.numel() for p in model.parameters())
-    print(f"Parameters: "f"{num_params / 1e6:.3f} M")
+        print(f"{key:10s}: {tuple(value.shape)}")
+    print(f"Parameters: {sum(p.numel() for p in model.parameters()) / 1e6:.3f} M")
