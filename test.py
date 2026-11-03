@@ -30,9 +30,6 @@ def get_final_log_probs(output, num_classes=CLASSES_NUM):
     return final_log_probs
 
 def main():
-    cfg.SAVE_RESULT_DIR.parent.mkdir(parents=True, exist_ok=True)
-    cfg.SAVE_CM_DIR.parent.mkdir(parents=True, exist_ok=True)
-    cfg.SAVE_REPORT_DIR.parent.mkdir(parents=True, exist_ok=True)
     model = build_model(cfg.CURRENT_MODEL)
     print("=" * 70)
     print("Loading model")
