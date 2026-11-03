@@ -28,7 +28,7 @@ def plot_training_curve(csv_path, save_dir):
     plt.close()
     # Learning Rate
     plt.figure(figsize=(8, 5))
-    plt.plot(history["epoch"], history["lr"], linewidth=2, color='blue')
+    plt.plot(history["epoch"], history["lr"], label="Learning Rate", linewidth=2)
     plt.xlabel("Epoch")
     plt.ylabel("Learning Rate")
     plt.grid(True)

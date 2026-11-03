@@ -1,9 +1,10 @@
 import torch
 from tqdm import tqdm
 from dataset.labels import get_coarse_label, get_fine_label
+from configs import config as cfg
 
 class Trainer:
-    def __init__(self, model, criterion, optimizer, device, coarse_loss_weight=0.2, expert_loss_weight=0.2):
+    def __init__(self, model, criterion, optimizer, device, coarse_loss_weight=cfg.COARSE_LOSS_WEIGHT, expert_loss_weight=cfg.EXPERT_LOSS_WEIGHT):
         self.model = model.to(device)
         self.criterion = criterion
         self.optimizer = optimizer
@@ -33,7 +34,7 @@ class Trainer:
                 output = self.model({"images": images, "label": labels}, return_dict=True)
                 final_log_probs = output["final_log_probs"].float()
                 final_loss = self.criterion(final_log_probs, labels) if isinstance(self.criterion, torch.nn.NLLLoss) else -final_log_probs.gather(1, labels.unsqueeze(1)).mean()
-                coarse_loss = torch.nn.functional.cross_entropy(output["coarse_logits"].float(), coarse_labels)
+                coarse_loss = torch.nn.functional.cross_entropy(output["coarse_logits"].float(), coarse_labels, label_smoothing=cfg.LABEL_SMOOTHING)
                 expert_loss_sum = final_loss.new_zeros(())
                 expert_sample_count = 0
                 for coarse_id, key in enumerate(("pronuclear_logits", "cleavage_logits", "blastocyst_logits")):
@@ -41,9 +42,8 @@ class Trainer:
                     if mask.any():
                         expert_logits = output[key][mask].float()
                         expert_targets = fine_labels[mask]
-                        expert_loss_sum = expert_loss_sum + torch.nn.functional.cross_entropy(expert_logits, expert_targets, reduction="sum")
+                        expert_loss_sum = expert_loss_sum + torch.nn.functional.cross_entropy(expert_logits, expert_targets, reduction="sum", label_smoothing=cfg.LABEL_SMOOTHING)
                         expert_sample_count += int(mask.sum().item())
-
                 expert_loss = expert_loss_sum / max(expert_sample_count, 1)
                 loss = final_loss + self.coarse_loss_weight * coarse_loss + self.expert_loss_weight * expert_loss
             self.scaler.scale(loss).backward()

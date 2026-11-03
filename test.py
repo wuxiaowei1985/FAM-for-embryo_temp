@@ -5,9 +5,7 @@ from configs import config as cfg
 from dataset.loader import test_loader
 from utils.get_model import build_model
 from dataset.labels import LABEL_NAMES
-# ============================================================
-# 类别数量
-# ============================================================
+
 CLASSES_NUM = len(LABEL_NAMES)
 # ============================================================
 # 16类最终概率
@@ -30,17 +28,12 @@ def get_final_log_probs(output, num_classes=CLASSES_NUM):
     log_sum = torch.logsumexp(final_log_probs, dim=1)
     assert torch.allclose(log_sum, torch.zeros_like(log_sum), atol=1e-4)
     return final_log_probs
-# ============================================================
-# Main
-# ============================================================
+
 def main():
-    # ========================================================
-    # 1. 创建模型
-    # ========================================================
+    cfg.SAVE_RESULT_DIR.parent.mkdir(parents=True, exist_ok=True)
+    cfg.SAVE_CM_DIR.parent.mkdir(parents=True, exist_ok=True)
+    cfg.SAVE_REPORT_DIR.parent.mkdir(parents=True, exist_ok=True)
     model = build_model(cfg.CURRENT_MODEL)
-    # ========================================================
-    # 2. 加载训练好的模型
-    # ========================================================
     print("=" * 70)
     print("Loading model")
     print("=" * 70)
@@ -49,53 +42,24 @@ def main():
     model.to(cfg.DEVICE)
     model.eval()
     print("Model loaded successfully.")
-    # ========================================================
-    # 3. 初始化统计变量
-    # ========================================================
     correct_per_class = torch.zeros(CLASSES_NUM, dtype=torch.int64)
     total_per_class = torch.zeros(CLASSES_NUM, dtype=torch.int64)
     overall_correct = 0
     overall_total = 0
     all_labels = []
     all_preds = []
-    # ========================================================
-    # 4. Test
-    # ========================================================
     with torch.no_grad():
         for batch in test_loader:
-            # ------------------------------------------------
-            # 数据移动到 GPU / CPU
-            # ------------------------------------------------
             batch["images"] = batch["images"].to(cfg.DEVICE)
             batch["label"] = batch["label"].to(cfg.DEVICE)
             labels = batch["label"]
-            # ------------------------------------------------
-            # Phase 2 forward
-            # 注意：这里不能直接 model(batch)，必须指定stage="fine"，因为最终测试需要三个 fine head。
-            # ------------------------------------------------
             output = model(batch, stage="fine", return_dict=True)
-            # ------------------------------------------------
-            # 得到最终16类概率
-            # ------------------------------------------------
             final_log_probs = get_final_log_probs(output)
-            # ------------------------------------------------
-            # 最终16类预测
-            # ------------------------------------------------
             preds = torch.argmax(final_log_probs, dim=1)
-            # ------------------------------------------------
-            # Overall statistics
-            # ------------------------------------------------
             overall_correct += (preds == labels).sum().item()
             overall_total += labels.size(0)
-            # ------------------------------------------------
-            # 保存全部标签和预测
-            # 用于 classification_report / confusion_matrix
-            # ------------------------------------------------
             all_labels.extend(labels.cpu().numpy())
             all_preds.extend(preds.cpu().numpy())
-            # ------------------------------------------------
-            # Per-class statistics
-            # ------------------------------------------------
             for gt, pred in zip(labels, preds):
                 gt = gt.item()
                 pred = pred.item()
@@ -103,7 +67,7 @@ def main():
                 if gt == pred:
                     correct_per_class[gt] += 1
     # ========================================================
-    # 5. Per-class Accuracy
+    # Per-class Accuracy
     # ========================================================
     print("=" * 70)
     print("Per-class Accuracy")
@@ -128,12 +92,12 @@ def main():
             }
         )
     # ========================================================
-    # 6. 保存 Per-class Accuracy
+    # 保存 Per-class Accuracy
     # ========================================================
     df = pd.DataFrame(result)
     df.to_csv(cfg.SAVE_RESULT_DIR, index=False, encoding="utf-8-sig")
     # ========================================================
-    # 7. Overall Accuracy
+    # Overall Accuracy
     # ========================================================
     if overall_total == 0:
         overall_acc = 0.0
@@ -144,7 +108,7 @@ def main():
     print(f"Overall Accuracy : {overall_acc:.2f}%")
     print("=" * 70)
     # ========================================================
-    # 8. Classification Report
+    # Classification Report
     # ========================================================
     print("\nClassification Report\n")
     # --------------------------------------------------------
@@ -160,8 +124,7 @@ def main():
     )
     print(report_text)
     # --------------------------------------------------------
-    # 字典形式
-    # 用于保存 CSV
+    # 字典形式，用于保存 CSV
     # --------------------------------------------------------
     report_dict = classification_report(
         all_labels,
@@ -173,12 +136,9 @@ def main():
         output_dict=True
     )
     # ========================================================
-    # 9. 保存 Classification Report
+    # 保存 Classification Report
     # ========================================================
     rows = []
-    # --------------------------------------------------------
-    # 每个类别
-    # --------------------------------------------------------
     for class_name in LABEL_NAMES:
         if class_name in report_dict:
             metrics = report_dict[class_name]
@@ -191,9 +151,6 @@ def main():
                     "support": metrics["support"]
                 }
             )
-    # --------------------------------------------------------
-    # macro avg / weighted avg
-    # --------------------------------------------------------
     for avg_type in ["macro avg", "weighted avg"]:
         if avg_type in report_dict:
             metrics = report_dict[avg_type]
@@ -206,10 +163,6 @@ def main():
                     "support": metrics["support"]
                 }
             )
-    # --------------------------------------------------------
-    # Overall accuracy
-    # 保持原来的保存方式： support 中记录 Overall Accuracy (%)
-    # --------------------------------------------------------
     rows.append(
         {
             "class": "accuracy",
@@ -222,19 +175,13 @@ def main():
     df_report = pd.DataFrame(rows)
     df_report.to_csv(cfg.SAVE_REPORT_DIR, index=False, encoding="utf-8-sig")
     # ========================================================
-    # 10. Confusion Matrix
+    # Confusion Matrix
     # ========================================================
     cm = confusion_matrix(all_labels, all_preds, labels=list(range(CLASSES_NUM)))
     print("\nConfusion Matrix\n")
     print(cm)
-    # --------------------------------------------------------
-    # 保存 Confusion Matrix
-    # --------------------------------------------------------
     cm_df = pd.DataFrame(cm, index=LABEL_NAMES, columns=LABEL_NAMES)
     cm_df.to_csv(cfg.SAVE_CM_DIR, encoding="utf-8-sig")
-    # ========================================================
-    # 11. 测试完成
-    # ========================================================
     print("\n")
     print("=" * 70)
     print("Testing completed.")

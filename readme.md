@@ -8,7 +8,7 @@
 
 ## 数据集说明
 
-**存储位置：**`I:\datasets\胚胎\南特704`
+**存储位置：**`/home/cz/datasets/embryo/Nantes 704`
 
 #### 数据集组织形式
 
@@ -54,7 +54,7 @@
 
 ```bash
 {
-	"images": imgs				//[7x1x500x500]-[FxCxHxW]
+    "images": imgs				//[7x1x500x500]-[FxCxHxW]
     "embryo": embryo_name,		//ep.AA83-7
     "image_name": img.name,		//ep.D2013.01.28_S0717_I132_WELL7_RUN10.jpeg
     "run": run_id,				//ep.10
