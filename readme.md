@@ -1,9 +1,9 @@
-# focus Attention
+# Embryo Attention
 
 ## 项目说明
 
 - 本项目主要旨在解决现有模型对与南特704数据集中胚胎图像的七个焦平面利用不充分的情况
-- 通过focus-attention学习七个焦平面的特征
+- 通过注意力机制学习七个焦平面的特征
 - 用胚胎发育阶段预测任务判断模型性能
 
 ## 数据集说明
@@ -43,6 +43,7 @@
     data/
     dataset/
     model/
+    run/
     test/
     trainer/
     utils/
@@ -54,11 +55,11 @@
 
 ```bash
 {
-    "images": imgs				//[7x1x500x500]-[FxCxHxW]
-    "embryo": embryo_name,		//ep.AA83-7
-    "image_name": img.name,		//ep.D2013.01.28_S0717_I132_WELL7_RUN10.jpeg
-    "run": run_id,				//ep.10
-    "label": label				//ep.0
+    "images": imgs,           //ep.[7x1x500x500]-[FxCxHxW]
+    "embryo": embryo_name,    //ep.AA83-7
+    "image_name": img.name,   //ep.D2013.01.28_S0717_I132_WELL7_RUN10.jpeg
+    "run": run_id,            //ep.10
+    "label": label            //ep.0
 }
 ```
 
